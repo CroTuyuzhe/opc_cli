@@ -222,7 +222,7 @@ export class AgentRunner {
       }
 
       if (msg.content) {
-        console.log(`\n${msg.content}`);
+        console.log('\n' + ui.collapseText(msg.content, ''));
       }
 
       messages.push({ ...msg });
@@ -279,7 +279,7 @@ export class AgentRunner {
         if (block.type === 'text') {
           assistantContent.push({ type: 'text', text: block.text });
           if (block.text) {
-            console.log(`\n${block.text}`);
+            console.log('\n' + ui.collapseText(block.text, ''));
           }
         } else if (block.type === 'tool_use') {
           assistantContent.push({

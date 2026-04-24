@@ -4,6 +4,8 @@ import Table from 'cli-table3';
 import { select } from '@inquirer/prompts';
 import readline from 'readline';
 
+const COLLAPSE_THRESHOLD = 5;
+
 let _rl: readline.Interface | null = null;
 
 export function setReadline(rl: readline.Interface) {
@@ -178,15 +180,30 @@ export function printTaskNotification(role: string, taskTitle: string, summary: 
   console.log(boxen(text, { padding: 1, borderColor: 'green', title: 'Task Completed', titleAlignment: 'left' }));
 }
 
+export function collapseText(text: string, indent = '  '): string {
+  const lines = text.split('\n');
+  if (lines.length <= COLLAPSE_THRESHOLD) {
+    return lines.map(l => `${indent}${l}`).join('\n');
+  }
+  const shown = lines.slice(0, COLLAPSE_THRESHOLD);
+  const hidden = lines.length - COLLAPSE_THRESHOLD;
+  return [
+    ...shown.map(l => `${indent}${l}`),
+    `${indent}${chalk.dim(`... +${hidden} lines`)}`,
+  ].join('\n');
+}
+
 export function printBashOutput(stdout: string, stderr: string, returncode: number) {
   if (stdout) {
-    for (const line of stdout.split('\n')) {
-      console.log(`  ${line}`);
-    }
+    console.log(collapseText(stdout));
   }
   if (stderr) {
-    for (const line of stderr.split('\n')) {
-      console.log(`  ${chalk.red(line)}`);
+    const lines = stderr.split('\n');
+    if (lines.length <= COLLAPSE_THRESHOLD) {
+      for (const line of lines) console.log(`  ${chalk.red(line)}`);
+    } else {
+      for (const line of lines.slice(0, COLLAPSE_THRESHOLD)) console.log(`  ${chalk.red(line)}`);
+      console.log(`  ${chalk.dim(`... +${lines.length - COLLAPSE_THRESHOLD} lines`)}`);
     }
   }
   if (returncode !== 0) {

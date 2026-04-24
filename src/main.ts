@@ -581,7 +581,7 @@ class OPCApp {
         userInput,
         (name, args) => this.executeTool(name, args)
       );
-      if (response) console.log(response);
+      if (response) console.log(ui.collapseText(response, ''));
     } catch (e: any) {
       ui.printError(`Error: ${e.message}`);
     }

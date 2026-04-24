@@ -2,6 +2,7 @@ import type { Config } from './config.js';
 import type { Bus } from './bus.js';
 import type { IdentityEngine } from './identity.js';
 import { TOOL_DEFS, toAnthropicTools, type ToolDef } from './tools.js';
+import { collapseText } from './ui.js';
 
 export type ToolExecutor = (name: string, args: Record<string, any>) => Promise<string>;
 
@@ -120,7 +121,7 @@ export class Brain {
       }
 
       if (msg.content) {
-        console.log(`\n${msg.content}`);
+        console.log('\n' + collapseText(msg.content, ''));
       }
 
       this.messages.push(this.cleanAssistantMsg(msg));
@@ -182,7 +183,7 @@ export class Brain {
         if (block.type === 'text') {
           assistantContent.push({ type: 'text', text: block.text });
           if (block.text) {
-            console.log(`\n${block.text}`);
+            console.log('\n' + collapseText(block.text, ''));
           }
         } else if (block.type === 'tool_use') {
           assistantContent.push({
