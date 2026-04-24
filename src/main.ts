@@ -649,6 +649,10 @@ async function main() {
         return;
       }
 
+      readline.moveCursor(process.stdout, 0, -1);
+      readline.clearLine(process.stdout, 0);
+      console.log(chalk.bgGray.white(` > ${trimmed} `));
+
       if (trimmed.startsWith('/')) {
         const shouldExit = app.handleSlash(trimmed);
         if (shouldExit) {
