@@ -250,7 +250,7 @@ class OPCApp {
     promise.then(done => {
       this.doneQueue.push(done);
       this.bgPromises.delete(taskId);
-      if (_replIdle && _mainRl) {
+      if (_replIdle && _mainRl && !ui.isPromptActive()) {
         interruptPrompt(_mainRl, () => this.drainNotifications());
       }
     });
@@ -633,7 +633,7 @@ async function main() {
   ui.setReadline(rl);
 
   setInterval(() => {
-    if (_replIdle && _mainRl && app.hasPendingNotifications()) {
+    if (_replIdle && _mainRl && !ui.isPromptActive() && app.hasPendingNotifications()) {
       interruptPrompt(_mainRl, () => app.drainNotifications());
     }
   }, 2000);

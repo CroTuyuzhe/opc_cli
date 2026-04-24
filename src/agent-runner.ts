@@ -245,14 +245,18 @@ export class AgentRunner {
 
     while (true) {
       ui.startSpinner();
-      const resp = await client.chat.completions.create({
-        model: this.config.defaultModel,
-        messages,
-        tools,
-        max_tokens: this.config.maxTokens,
-        temperature: this.config.temperature,
-      });
-      ui.stopSpinner(resp.usage);
+      let resp: any;
+      try {
+        resp = await client.chat.completions.create({
+          model: this.config.defaultModel,
+          messages,
+          tools,
+          max_tokens: this.config.maxTokens,
+          temperature: this.config.temperature,
+        });
+      } finally {
+        ui.stopSpinner(resp?.usage);
+      }
       const msg = resp.choices[0].message;
 
       if (!msg.tool_calls || msg.tool_calls.length === 0) {
@@ -293,15 +297,19 @@ export class AgentRunner {
 
     while (true) {
       ui.startSpinner();
-      const resp = await client.messages.create({
-        model: this.config.defaultModel,
-        max_tokens: this.config.maxTokens,
-        temperature: this.config.temperature,
-        system,
-        messages,
-        tools,
-      });
-      ui.stopSpinner(resp.usage ? { prompt_tokens: resp.usage.input_tokens, completion_tokens: resp.usage.output_tokens } : undefined);
+      let resp: any;
+      try {
+        resp = await client.messages.create({
+          model: this.config.defaultModel,
+          max_tokens: this.config.maxTokens,
+          temperature: this.config.temperature,
+          system,
+          messages,
+          tools,
+        });
+      } finally {
+        ui.stopSpinner(resp?.usage ? { prompt_tokens: resp.usage.input_tokens, completion_tokens: resp.usage.output_tokens } : undefined);
+      }
 
       const hasToolUse = resp.content.some((b: any) => b.type === 'tool_use');
       if (!hasToolUse) {
@@ -356,16 +364,20 @@ export class AgentRunner {
     const { default: OpenAI } = await import('openai');
     const client = new OpenAI({ apiKey: this.config.apiKey, baseURL: this.config.baseUrl });
     ui.startSpinner();
-    const resp = await client.chat.completions.create({
-      model: this.config.defaultModel,
-      messages: [
-        { role: 'system', content: system },
-        { role: 'user', content: userMsg },
-      ],
-      max_tokens: this.config.maxTokens,
-      temperature: this.config.temperature,
-    });
-    ui.stopSpinner(resp.usage);
+    let resp: any;
+    try {
+      resp = await client.chat.completions.create({
+        model: this.config.defaultModel,
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: userMsg },
+        ],
+        max_tokens: this.config.maxTokens,
+        temperature: this.config.temperature,
+      });
+    } finally {
+      ui.stopSpinner(resp?.usage);
+    }
     return resp.choices[0].message.content ?? '';
   }
 
@@ -373,14 +385,18 @@ export class AgentRunner {
     const { default: Anthropic } = await import('@anthropic-ai/sdk');
     const client = new Anthropic({ apiKey: this.config.apiKey });
     ui.startSpinner();
-    const resp = await client.messages.create({
-      model: this.config.defaultModel,
-      max_tokens: this.config.maxTokens,
-      temperature: this.config.temperature,
-      system,
-      messages: [{ role: 'user', content: userMsg }],
-    });
-    ui.stopSpinner(resp.usage ? { prompt_tokens: resp.usage.input_tokens, completion_tokens: resp.usage.output_tokens } : undefined);
+    let resp: any;
+    try {
+      resp = await client.messages.create({
+        model: this.config.defaultModel,
+        max_tokens: this.config.maxTokens,
+        temperature: this.config.temperature,
+        system,
+        messages: [{ role: 'user', content: userMsg }],
+      });
+    } finally {
+      ui.stopSpinner(resp?.usage ? { prompt_tokens: resp.usage.input_tokens, completion_tokens: resp.usage.output_tokens } : undefined);
+    }
     return resp.content
       .filter((b: any) => b.type === 'text')
       .map((b: any) => b.text)

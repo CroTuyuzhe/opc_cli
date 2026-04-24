@@ -66,6 +66,7 @@ export function stopSpinner(usage?: { prompt_tokens?: number; completion_tokens?
 }
 
 let _rl: readline.Interface | null = null;
+let _promptActive = false;
 
 export function setReadline(rl: readline.Interface) {
   _rl = rl;
@@ -73,6 +74,10 @@ export function setReadline(rl: readline.Interface) {
 
 export function getReadline(): readline.Interface | null {
   return _rl;
+}
+
+export function isPromptActive(): boolean {
+  return _promptActive;
 }
 
 function rlQuestion(prompt: string): Promise<string> {
@@ -286,25 +291,31 @@ export async function promptUserSelect(options: Array<{ label: string; value: st
     ...options.map(o => ({ name: o.label, value: o.value })),
     { name: '自由输入...', value: '__chat__' },
   ];
+  stopSpinner();
+  _promptActive = true;
   try {
     if (_rl) _rl.pause();
     const answer = await select({ message: 'Choose:', choices });
     if (_rl) _rl.resume();
+    _promptActive = false;
     if (answer === '__chat__') {
       return promptUserAnswer();
     }
     return answer;
   } catch {
     if (_rl) _rl.resume();
+    _promptActive = false;
     return '(skipped)';
   }
 }
 
 export async function promptBashApproval(command: string, description = ''): Promise<'yes' | 'always' | 'no'> {
+  stopSpinner();
   console.log();
   if (description) console.log(`  ${chalk.dim(description)}`);
   console.log(`  ${chalk.bold.yellow('$')} ${chalk.white(command)}`);
   console.log();
+  _promptActive = true;
   try {
     if (_rl) _rl.pause();
     const answer = await select({
@@ -316,9 +327,11 @@ export async function promptBashApproval(command: string, description = ''): Pro
       ],
     });
     if (_rl) _rl.resume();
+    _promptActive = false;
     return answer as 'yes' | 'always' | 'no';
   } catch {
     if (_rl) _rl.resume();
+    _promptActive = false;
     return 'no';
   }
 }

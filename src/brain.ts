@@ -107,14 +107,18 @@ export class Brain {
     const client = await this.getClient();
     while (true) {
       startSpinner();
-      const resp = await client.chat.completions.create({
-        model: this.config.defaultModel,
-        messages: [{ role: 'system', content: this.systemPrompt }, ...this.messages],
-        tools: this.tools,
-        max_tokens: this.config.maxTokens,
-        temperature: this.config.temperature,
-      });
-      stopSpinner(resp.usage);
+      let resp: any;
+      try {
+        resp = await client.chat.completions.create({
+          model: this.config.defaultModel,
+          messages: [{ role: 'system', content: this.systemPrompt }, ...this.messages],
+          tools: this.tools,
+          max_tokens: this.config.maxTokens,
+          temperature: this.config.temperature,
+        });
+      } finally {
+        stopSpinner(resp?.usage);
+      }
       const msg = resp.choices[0].message;
 
       if (!msg.tool_calls || msg.tool_calls.length === 0) {
@@ -160,15 +164,19 @@ export class Brain {
 
     while (true) {
       startSpinner();
-      const resp = await client.messages.create({
-        model: this.config.defaultModel,
-        max_tokens: this.config.maxTokens,
-        temperature: this.config.temperature,
-        system: this.systemPrompt,
-        messages: apiMessages,
-        tools,
-      });
-      stopSpinner(resp.usage ? { prompt_tokens: resp.usage.input_tokens, completion_tokens: resp.usage.output_tokens } : undefined);
+      let resp: any;
+      try {
+        resp = await client.messages.create({
+          model: this.config.defaultModel,
+          max_tokens: this.config.maxTokens,
+          temperature: this.config.temperature,
+          system: this.systemPrompt,
+          messages: apiMessages,
+          tools,
+        });
+      } finally {
+        stopSpinner(resp?.usage ? { prompt_tokens: resp.usage.input_tokens, completion_tokens: resp.usage.output_tokens } : undefined);
+      }
 
       const hasToolUse = resp.content.some((b: any) => b.type === 'tool_use');
       if (!hasToolUse) {
