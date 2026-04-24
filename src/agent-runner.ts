@@ -38,13 +38,21 @@ const AGENT_TOOL_DEFS: Record<string, AgentToolDef> = {
     },
     required: ['path', 'content'],
   },
+  read_file: {
+    name: 'read_file',
+    description: 'Read a file from the project workspace or artifacts directory.',
+    properties: {
+      path: { type: 'string', description: 'Relative path (e.g. artifacts/xxx_ui.md or code/style.css)' },
+    },
+    required: ['path'],
+  },
 };
 
 export const ROLE_TOOLS: Record<string, string[]> = {
   pm: ['ask_user'],
-  dev: ['write_file'],
-  ui: ['write_file'],
-  tester: [],
+  dev: ['read_file', 'write_file'],
+  ui: ['read_file', 'write_file'],
+  tester: ['read_file'],
   admin: [],
 };
 
@@ -103,7 +111,15 @@ export class AgentRunner {
     if (!task) return `No task ${taskId} in ${role} inbox`;
 
     const system = this.identity.buildSystemPrompt(role);
-    const userMsg = `Task: ${task.title}\n\n${task.content}`;
+    let userMsg = `Task: ${task.title}\n\n${task.content}`;
+    if (task.context) {
+      if (task.context.artifacts?.length) {
+        userMsg += `\n\n## Referenced Artifacts\n${task.context.artifacts.map((a: string) => `- ${a}`).join('\n')}\nUse read_file to access these artifacts before starting work.`;
+      }
+      if (task.context.depends_on) {
+        userMsg += `\n\nDepends on task: ${task.context.depends_on}`;
+      }
+    }
 
     let resultText: string;
     let writtenFiles: string[] = [];
@@ -149,6 +165,26 @@ export class AgentRunner {
   }
 
   private async handleTool(name: string, args: Record<string, any>, role: string): Promise<string> {
+    if (name === 'read_file') {
+      const relPath = args.path ?? '';
+      const projectDir = this.projectId
+        ? path.join(this.workspace, this.projectId)
+        : this.workspace;
+      const candidates = [
+        this.codeRoot ? path.join(this.codeRoot, relPath) : null,
+        path.join(projectDir, relPath),
+        path.join(projectDir, 'code', relPath),
+        path.join(projectDir, 'artifacts', relPath),
+      ].filter(Boolean) as string[];
+      for (const fp of candidates) {
+        if (fs.existsSync(fp) && fs.statSync(fp).isFile()) {
+          const content = fs.readFileSync(fp, 'utf-8');
+          return content.length > 20000 ? content.slice(0, 20000) + '\n...(truncated)' : content;
+        }
+      }
+      return `File not found: ${relPath}`;
+    }
+
     if (name === 'write_file') {
       const relPath = args.path ?? '';
       const content = args.content ?? '';

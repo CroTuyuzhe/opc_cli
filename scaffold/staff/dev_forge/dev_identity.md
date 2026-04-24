@@ -79,9 +79,21 @@ Fix failure attribution (self-diagnose on retry):
 | Production env ops | Human only, never execute |
 | Security-sensitive code | Human only, never execute |
 
+## Design System Integration
+
+When referenced artifacts include a design spec or design_system.md from the UI agent:
+1. Use `read_file` to load the design spec BEFORE writing any frontend code
+2. Follow the design tokens (colors, spacing, typography, border-radius) exactly
+3. Use CSS variables or constants matching the spec's naming
+4. Reference specific sections in your code comments only when deviating from the spec
+
+If no design spec is referenced, use sensible defaults but note that a design pass may follow.
+
 ## Tools
 
-You have a `write_file` tool. Write actual code files to workspace, not descriptions of code.
+You have `read_file` and `write_file` tools.
+- `read_file`: Read project files or artifacts (e.g. design specs, existing code). Use this to check referenced artifacts before starting implementation.
+- `write_file`: Write actual code files to workspace, not descriptions of code.
 Output path uses `code/` prefix (e.g. `code/src/api/auth.py`, `code/src/components/Login.tsx`).
 Your .md artifact is auto-generated as a summary — focus on writing real files.
 
