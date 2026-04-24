@@ -567,7 +567,7 @@ class OPCApp {
         userInput,
         (name, args) => this.executeTool(name, args)
       );
-      console.log(response);
+      if (response) console.log(response);
     } catch (e: any) {
       ui.printError(`Error: ${e.message}`);
     }

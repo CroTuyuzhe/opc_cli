@@ -95,6 +95,13 @@ export class Brain {
     return this.chatOpenAI(toolExecutor);
   }
 
+  private cleanAssistantMsg(msg: any): any {
+    const clean: any = { role: 'assistant', content: msg.content ?? null };
+    if (msg.tool_calls?.length) clean.tool_calls = msg.tool_calls;
+    if (msg.reasoning_content) clean.reasoning_content = msg.reasoning_content;
+    return clean;
+  }
+
   private async chatOpenAI(toolExecutor?: ToolExecutor): Promise<string> {
     const client = await this.getClient();
     while (true) {
@@ -108,7 +115,7 @@ export class Brain {
       const msg = resp.choices[0].message;
 
       if (!msg.tool_calls || msg.tool_calls.length === 0) {
-        this.messages.push({ ...msg });
+        this.messages.push(this.cleanAssistantMsg(msg));
         return msg.content ?? '';
       }
 
@@ -116,13 +123,18 @@ export class Brain {
         console.log(`\n${msg.content}`);
       }
 
-      this.messages.push({ ...msg });
+      this.messages.push(this.cleanAssistantMsg(msg));
 
       for (const tc of msg.tool_calls) {
-        const args = JSON.parse(tc.function.arguments);
-        const result = toolExecutor
-          ? await toolExecutor(tc.function.name, args)
-          : '{}';
+        let result: string;
+        try {
+          const args = JSON.parse(tc.function.arguments);
+          result = toolExecutor
+            ? await toolExecutor(tc.function.name, args)
+            : '{}';
+        } catch (e: any) {
+          result = `Error: ${e.message}`;
+        }
         this.messages.push({
           role: 'tool',
           tool_call_id: tc.id,
@@ -179,9 +191,14 @@ export class Brain {
             name: block.name,
             input: block.input,
           });
-          const result = toolExecutor
-            ? await toolExecutor(block.name, block.input)
-            : '{}';
+          let result: string;
+          try {
+            result = toolExecutor
+              ? await toolExecutor(block.name, block.input)
+              : '{}';
+          } catch (e: any) {
+            result = `Error: ${e.message}`;
+          }
           toolResults.push({
             type: 'tool_result',
             tool_use_id: block.id,
