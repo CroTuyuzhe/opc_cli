@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/opc-cli"><img src="https://img.shields.io/npm/v/opc-cli?color=blue&label=npm" alt="npm"></a>
+  <a href="https://www.npmjs.com/package/opc-cli"><img src="https://img.shields.io/npm/v/@crotuyuzhe/opc-cli?color=blue&label=npm" alt="npm"></a>
   <a href="https://github.com/CroTuyuzhe/opc_agent/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-green" alt="license"></a>
   <img src="https://img.shields.io/badge/node-%3E%3D18-brightgreen" alt="node">
   <img src="https://img.shields.io/badge/LLM-OpenAI%20%7C%20Anthropic-purple" alt="LLM">
@@ -98,7 +98,7 @@ OPC 是一个运行在终端里的 **AI 多智能体协作框架**。你只需�
 ### 安装
 
 ```bash
-npm install -g opc-cli
+npm install -g @crotuyuzhe/opc-cli
 ```
 
 > 需要 Node.js 18+
