@@ -438,7 +438,7 @@ class OPCApp {
 
 async function main() {
   if (process.argv[2] === 'init') {
-    initProject(process.cwd());
+    await initProject(process.cwd());
     return;
   }
 

@@ -2,6 +2,7 @@ import fs from 'fs-extra';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import chalk from 'chalk';
+import { select, input, password } from '@inquirer/prompts';
 
 const ROLES = ['pm', 'dev', 'ui', 'tester', 'admin'];
 
@@ -18,7 +19,12 @@ function scaffoldRoot(): string {
   return path.join(__dirname, '..', 'scaffold');
 }
 
-export function initProject(target: string) {
+const PROVIDER_PRESETS: Record<string, { base_url: string; default_model: string }> = {
+  openai: { base_url: 'https://api.openai.com/v1', default_model: 'gpt-4o' },
+  anthropic: { base_url: '', default_model: 'claude-sonnet-4-20250514' },
+};
+
+export async function initProject(target: string) {
   target = path.resolve(target);
   const scaffold = scaffoldRoot();
 
@@ -71,9 +77,67 @@ export function initProject(target: string) {
   if (skipped.length > 0) {
     console.log(`\n  ${chalk.dim(`${skipped.length} existing files unchanged`)}`);
   }
-  console.log(`\n${chalk.bold('Next steps:')}`);
-  console.log(`  1. Edit ${chalk.cyan('opc.json')} — set your api_key`);
-  console.log(`  2. Run ${chalk.cyan('opc')} to start\n`);
+  await configWizard(target);
+}
+
+async function configWizard(target: string) {
+  const opcJson = path.join(target, 'opc.json');
+  const existing = fs.existsSync(opcJson) ? fs.readJsonSync(opcJson) : null;
+
+  if (existing && existing.api_key) {
+    console.log(chalk.dim(`\n  opc.json already configured (api_key set).`));
+    console.log(`\n  Run ${chalk.cyan('opc')} to start\n`);
+    return;
+  }
+
+  console.log(`\n${chalk.bold('⚙  Configure your AI provider:')}\n`);
+
+  try {
+    const provider = await select({
+      message: 'Provider',
+      choices: [
+        { name: 'OpenAI (compatible with DeepSeek, Moonshot, etc.)', value: 'openai' },
+        { name: 'Anthropic Claude', value: 'anthropic' },
+      ],
+    });
+
+    const preset = PROVIDER_PRESETS[provider];
+
+    const apiKey = await password({
+      message: 'API Key',
+      mask: '*',
+    });
+
+    const baseUrl = provider === 'openai'
+      ? await input({
+          message: 'Base URL',
+          default: preset.base_url,
+        })
+      : preset.base_url;
+
+    const model = await input({
+      message: 'Model',
+      default: preset.default_model,
+    });
+
+    const config: Record<string, any> = {
+      provider,
+      api_key: apiKey,
+      default_model: model,
+      team_root: '.',
+      max_tokens: 8192,
+      temperature: 0.7,
+    };
+    if (baseUrl) config.base_url = baseUrl;
+
+    fs.writeJsonSync(opcJson, config, { spaces: 4 });
+
+    console.log(`\n  ${chalk.green('✅')} Configuration saved to ${chalk.cyan('opc.json')}`);
+    console.log(`\n  Run ${chalk.cyan('opc')} to start!\n`);
+  } catch {
+    console.log(chalk.dim('\n  Configuration skipped. Edit opc.json manually.'));
+    console.log(`\n  Run ${chalk.cyan('opc')} to start\n`);
+  }
 }
 
 function getAllFiles(dir: string): string[] {

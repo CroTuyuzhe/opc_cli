@@ -221,6 +221,10 @@ export class AgentRunner {
         return { text: msg.content ?? '', files: writtenFiles };
       }
 
+      if (msg.content) {
+        console.log(`\n${msg.content}\n`);
+      }
+
       messages.push({ ...msg });
       for (const tc of msg.tool_calls) {
         const args = JSON.parse(tc.function.arguments);
@@ -274,6 +278,9 @@ export class AgentRunner {
       for (const block of resp.content) {
         if (block.type === 'text') {
           assistantContent.push({ type: 'text', text: block.text });
+          if (block.text) {
+            console.log(`\n${block.text}\n`);
+          }
         } else if (block.type === 'tool_use') {
           assistantContent.push({
             type: 'tool_use',

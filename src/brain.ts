@@ -108,9 +108,12 @@ export class Brain {
       const msg = resp.choices[0].message;
 
       if (!msg.tool_calls || msg.tool_calls.length === 0) {
-        const text = msg.content ?? '';
-        this.messages.push({ role: 'assistant', content: text });
-        return text;
+        this.messages.push({ ...msg });
+        return msg.content ?? '';
+      }
+
+      if (msg.content) {
+        console.log(`\n${msg.content}\n`);
       }
 
       this.messages.push({ ...msg });
@@ -166,6 +169,9 @@ export class Brain {
       for (const block of resp.content) {
         if (block.type === 'text') {
           assistantContent.push({ type: 'text', text: block.text });
+          if (block.text) {
+            console.log(`\n${block.text}\n`);
+          }
         } else if (block.type === 'tool_use') {
           assistantContent.push({
             type: 'tool_use',
