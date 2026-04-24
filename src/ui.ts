@@ -43,9 +43,9 @@ const STATE_ICON: Record<string, string> = {
   idle: chalk.dim('○'),
 };
 
-export function printWelcome(configOk: boolean, provider: string, model: string, teamRoot: string, maxTokens?: number, temperature?: number) {
+export function printWelcome(configOk: boolean, provider: string, model: string, teamRoot: string, maxTokens?: number, temperature?: number, version?: string) {
   const lines = [
-    chalk.bold('OPC Team Agent') + ' v0.1',
+    chalk.bold('OPC Team Agent') + ` v${version ?? '0.1'}`,
     '',
     `  Provider   : ${chalk.cyan(provider)}`,
     `  Model      : ${chalk.cyan(model)}`,

@@ -1,6 +1,7 @@
 import fs from 'fs-extra';
 import path from 'path';
 import { execSync } from 'child_process';
+import { fileURLToPath } from 'url';
 import readline from 'readline';
 import chalk from 'chalk';
 
@@ -13,6 +14,11 @@ import { SkillLoader } from './skill-loader.js';
 import { TOOL_DEFS, mergeSkillTools } from './tools.js';
 import { initProject } from './init.js';
 import * as ui from './ui.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const PKG = fs.readJsonSync(path.resolve(__dirname, '..', 'package.json'));
+const VERSION: string = PKG.version;
+const PKG_NAME: string = PKG.name;
 
 interface DoneTask {
   role: string;
@@ -63,7 +69,7 @@ class OPCApp {
 
     const errors = validateConfig(this.config);
     const configOk = errors.length === 0;
-    ui.printWelcome(configOk, this.config.provider, this.config.defaultModel, root, this.config.maxTokens, this.config.temperature);
+    ui.printWelcome(configOk, this.config.provider, this.config.defaultModel, root, this.config.maxTokens, this.config.temperature, VERSION);
     for (const e of errors) {
       ui.printError(`  ⚠ ${e}`);
     }
@@ -538,7 +544,7 @@ class OPCApp {
   private async uninstall() {
     console.log(chalk.bold.red('⚠ Uninstall OPC'));
     console.log('This will:');
-    console.log('  1. npm uninstall -g @crotuyuzhe/opc-cli');
+    console.log(`  1. npm uninstall -g ${PKG_NAME}`);
     console.log('  2. Remove ~/.opc/ config directory');
 
     const answer = await ui.promptUserAnswer();
@@ -547,7 +553,7 @@ class OPCApp {
       return;
     }
     try {
-      execSync('npm uninstall -g @crotuyuzhe/opc-cli', { stdio: 'inherit' });
+      execSync(`npm uninstall -g ${PKG_NAME}`, { stdio: 'inherit' });
     } catch {}
     const opcHome = path.join(process.env.HOME ?? '~', '.opc');
     if (fs.existsSync(opcHome)) {
@@ -574,14 +580,37 @@ class OPCApp {
   }
 }
 
+async function checkForUpdate(): Promise<void> {
+  try {
+    const resp = await fetch(`https://registry.npmjs.org/${PKG_NAME}/latest`);
+    if (!resp.ok) return;
+    const data = await resp.json() as any;
+    const latest = data.version;
+    if (latest && latest !== VERSION) {
+      console.log(
+        chalk.yellow(`\n  ⬆ New version available: ${chalk.bold(latest)} (current: ${VERSION})`) +
+        chalk.dim(`\n    npm install -g ${PKG_NAME}\n`)
+      );
+    }
+  } catch {}
+}
+
 async function main() {
-  if (process.argv[2] === 'init') {
+  const arg = process.argv[2];
+
+  if (arg === '-v' || arg === '--version') {
+    console.log(`${PKG_NAME} v${VERSION}`);
+    return;
+  }
+
+  if (arg === 'init') {
     await initProject(process.cwd());
     return;
   }
 
   const app = new OPCApp();
   app.init();
+  checkForUpdate();
 
   const historyDir = path.join(process.env.HOME ?? '~', '.opc');
   fs.ensureDirSync(historyDir);
