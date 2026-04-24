@@ -25,6 +25,14 @@ interface DoneTask {
 let _mainRl: readline.Interface | null = null;
 let _replIdle = false;
 
+function interruptPrompt(rl: readline.Interface, writeFn: () => void): void {
+  const partialInput = (rl as any).line ?? '';
+  readline.clearLine(process.stdout, 0);
+  readline.cursorTo(process.stdout, 0);
+  writeFn();
+  process.stdout.write('opc > ' + partialInput);
+}
+
 class OPCApp {
   config!: Config;
   bus!: Bus;
@@ -236,8 +244,7 @@ class OPCApp {
       this.doneQueue.push(done);
       this.bgPromises.delete(taskId);
       if (_replIdle && _mainRl) {
-        this.drainNotifications();
-        _mainRl.prompt();
+        interruptPrompt(_mainRl, () => this.drainNotifications());
       }
     });
 
@@ -250,6 +257,10 @@ class OPCApp {
       const done = this.doneQueue.shift()!;
       ui.printTaskNotification(done.role, done.title, done.summary, done.artifact);
     }
+  }
+
+  hasPendingNotifications(): boolean {
+    return this.doneQueue.length > 0;
   }
 
   private loadRegistry(): any[] {
@@ -583,6 +594,12 @@ async function main() {
 
   _mainRl = rl;
   ui.setReadline(rl);
+
+  setInterval(() => {
+    if (_replIdle && _mainRl && app.hasPendingNotifications()) {
+      interruptPrompt(_mainRl, () => app.drainNotifications());
+    }
+  }, 2000);
 
   const askQuestion = (): void => {
     app.drainNotifications();
