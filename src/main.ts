@@ -458,9 +458,34 @@ class OPCApp {
         console.log(`\n  ${chalk.bold('Artifact:')} ${chalk.cyan(artifactPath)}`);
       }
       console.log();
+    } else if (action === 'close') {
+      const task = this.findActiveTask(taskId);
+      if (!task) {
+        ui.printError(`No active/queued task found: ${taskId}`);
+        return;
+      }
+      if (task.status === 'active') {
+        this.bus.complete(task.to, task.id, 'Manually closed by user');
+      } else {
+        this.bus.claim(task.to, task.id);
+        this.bus.complete(task.to, task.id, 'Manually closed by user');
+      }
+      console.log(`  ${chalk.green('✓')} Task [${task.id}] ${task.title} — closed and archived`);
     } else {
-      ui.printError('Usage: /task [id] [open]');
+      ui.printError('Usage: /task [id] [open|close]');
     }
+  }
+
+  private findActiveTask(taskId: string): any | null {
+    for (const role of ROLES) {
+      for (const t of this.bus.listActive(role)) {
+        if (t.id === taskId || t.id.startsWith(taskId)) return t;
+      }
+      for (const t of this.bus.listInbox(role)) {
+        if (t.id === taskId || t.id.startsWith(taskId)) return t;
+      }
+    }
+    return null;
   }
 
   private findTask(taskId: string): any | null {

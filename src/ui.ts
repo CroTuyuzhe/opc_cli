@@ -103,6 +103,7 @@ export function printHelp() {
     ['/new', 'Start fresh conversation (clear context)'],
     ['/task', 'List all tasks (active + recent)'],
     ['/task <id>', 'View task details'],
+    ['/task <id> close', 'Close and archive a task'],
     ['/compact', 'Toggle compact output'],
     ['/uninstall', 'Remove OPC from system'],
     ['/help', 'This help'],
