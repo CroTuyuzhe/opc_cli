@@ -1,5 +1,5 @@
 {
-  "name": "opc-agent",
+  "name": "opc-cli",
   "version": "0.1.0",
   "description": "OPC - AI multi-agent team orchestrator CLI",
   "type": "module",
@@ -18,7 +18,7 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/CroTuyuzhe/opc-agent.git"
+    "url": "https://github.com/CroTuyuzhe/opc_agent.git"
   },
   "engines": {
     "node": ">=18.0.0"
