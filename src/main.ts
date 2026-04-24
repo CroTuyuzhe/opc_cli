@@ -344,6 +344,11 @@ class OPCApp {
           console.log(`Dispatched [${task.id}] to ${role}`);
         }
       }
+    } else if (command === '/new') {
+      this.brain.reset();
+      console.log(chalk.green('Session cleared. Starting fresh conversation.'));
+    } else if (command === '/task') {
+      this.handleTaskCmd(arg);
     } else if (command === '/skill') {
       this.handleSkillCmd(arg);
     } else if (command === '/uninstall') {
@@ -390,6 +395,103 @@ class OPCApp {
     } else {
       ui.printError('Usage: /skill [list|install|remove]');
     }
+  }
+
+  private handleTaskCmd(arg: string) {
+    const parts = arg.split(/\s+/);
+    const sub = parts[0] || '';
+
+    if (!sub) {
+      const allTasks: any[] = [];
+      for (const role of ROLES) {
+        allTasks.push(...this.bus.listInbox(role));
+        allTasks.push(...this.bus.listActive(role));
+      }
+      const archived = this.listRecentArchived();
+      if (allTasks.length === 0 && archived.length === 0) {
+        console.log(chalk.dim('No tasks'));
+        return;
+      }
+      if (allTasks.length > 0) {
+        console.log(chalk.bold('\n  Active & Queued:'));
+        for (const t of allTasks) {
+          const icon = t.status === 'active' ? chalk.green('●') : chalk.yellow('○');
+          console.log(`  ${icon} [${chalk.cyan(t.id)}] ${t.to} — ${t.title}`);
+        }
+      }
+      if (archived.length > 0) {
+        console.log(chalk.bold('\n  Recently Completed:'));
+        for (const t of archived.slice(-10)) {
+          console.log(`  ${chalk.dim('✓')} [${chalk.dim(t.id)}] ${t.to} — ${t.title}`);
+        }
+      }
+      console.log();
+      return;
+    }
+
+    const taskId = sub;
+    const action = parts[1] || 'open';
+
+    if (action === 'open') {
+      const task = this.findTask(taskId);
+      if (!task) {
+        ui.printError(`Task not found: ${taskId}`);
+        return;
+      }
+      console.log();
+      console.log(`  ${chalk.bold('ID')}      ${task.id}`);
+      console.log(`  ${chalk.bold('Role')}    ${task.to}`);
+      console.log(`  ${chalk.bold('Title')}   ${task.title}`);
+      console.log(`  ${chalk.bold('Status')}  ${task.status}`);
+      console.log(`  ${chalk.bold('From')}    ${task.from}`);
+      console.log(`  ${chalk.bold('Created')} ${task.ts}`);
+      if (task.completed_at) {
+        console.log(`  ${chalk.bold('Done')}    ${task.completed_at}`);
+      }
+      if (task.result) {
+        console.log(`\n  ${chalk.bold('Result:')}`);
+        console.log(`  ${task.result.slice(0, 500)}`);
+      }
+      const root = teamRootPath(this.config);
+      const artifactPath = path.join(root, 'workspace', 'artifacts', `${task.id}_${task.to}.md`);
+      if (fs.existsSync(artifactPath)) {
+        console.log(`\n  ${chalk.bold('Artifact:')} ${chalk.cyan(artifactPath)}`);
+      }
+      console.log();
+    } else {
+      ui.printError('Usage: /task [id] [open]');
+    }
+  }
+
+  private findTask(taskId: string): any | null {
+    for (const role of ROLES) {
+      for (const t of this.bus.listInbox(role)) {
+        if (t.id === taskId || t.id.startsWith(taskId)) return t;
+      }
+      for (const t of this.bus.listActive(role)) {
+        if (t.id === taskId || t.id.startsWith(taskId)) return t;
+      }
+    }
+    for (const t of this.listRecentArchived()) {
+      if (t.id === taskId || t.id.startsWith(taskId)) return t;
+    }
+    return null;
+  }
+
+  private listRecentArchived(): any[] {
+    const root = teamRootPath(this.config);
+    const archiveRoot = path.join(root, 'memory_center', 'archive');
+    if (!fs.existsSync(archiveRoot)) return [];
+    const dates = fs.readdirSync(archiveRoot).filter(d => !d.startsWith('.')).sort().slice(-7);
+    const tasks: any[] = [];
+    for (const date of dates) {
+      const dir = path.join(archiveRoot, date);
+      if (!fs.statSync(dir).isDirectory()) continue;
+      for (const f of fs.readdirSync(dir).filter(f => f.endsWith('.json') && !f.includes('reflection'))) {
+        try { tasks.push(fs.readJsonSync(path.join(dir, f))); } catch {}
+      }
+    }
+    return tasks;
   }
 
   private reloadSkills() {
