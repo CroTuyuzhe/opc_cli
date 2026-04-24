@@ -1,10 +1,69 @@
 import chalk from 'chalk';
 import boxen from 'boxen';
 import Table from 'cli-table3';
+import ora, { type Ora } from 'ora';
 import { select } from '@inquirer/prompts';
 import readline from 'readline';
 
 const COLLAPSE_THRESHOLD = 5;
+
+const SPINNER_VERBS = [
+  'Thinking', 'Reasoning', 'Analyzing', 'Planning', 'Composing',
+  'Synthesizing', 'Processing', 'Evaluating', 'Crafting', 'Exploring',
+];
+
+function randomVerb(): string {
+  return SPINNER_VERBS[Math.floor(Math.random() * SPINNER_VERBS.length)];
+}
+
+function formatElapsed(ms: number): string {
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  const rs = s % 60;
+  return `${m}m ${rs}s`;
+}
+
+function formatTokens(n: number): string {
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
+  return String(n);
+}
+
+let _spinner: Ora | null = null;
+let _spinnerStart = 0;
+let _spinnerTimer: ReturnType<typeof setInterval> | null = null;
+let _spinnerVerb = '';
+
+export function startSpinner(): void {
+  _spinnerVerb = randomVerb();
+  _spinnerStart = Date.now();
+  _spinner = ora({
+    text: chalk.dim(`${_spinnerVerb}…`),
+    spinner: 'dots',
+    color: 'cyan',
+  }).start();
+  _spinnerTimer = setInterval(() => {
+    if (_spinner) {
+      const elapsed = formatElapsed(Date.now() - _spinnerStart);
+      _spinner.text = chalk.dim(`${_spinnerVerb}… (${elapsed})`);
+    }
+  }, 1000);
+}
+
+export function stopSpinner(usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }): void {
+  if (_spinnerTimer) { clearInterval(_spinnerTimer); _spinnerTimer = null; }
+  if (!_spinner) return;
+  const elapsed = formatElapsed(Date.now() - _spinnerStart);
+  let info = elapsed;
+  if (usage?.completion_tokens) {
+    info += ` · ↓ ${formatTokens(usage.completion_tokens)} tokens`;
+  }
+  _spinner.stopAndPersist({
+    symbol: chalk.cyan('✦'),
+    text: chalk.dim(`${_spinnerVerb}… (${info})`),
+  });
+  _spinner = null;
+}
 
 let _rl: readline.Interface | null = null;
 

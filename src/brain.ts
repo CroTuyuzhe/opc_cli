@@ -2,7 +2,7 @@ import type { Config } from './config.js';
 import type { Bus } from './bus.js';
 import type { IdentityEngine } from './identity.js';
 import { TOOL_DEFS, toAnthropicTools, type ToolDef } from './tools.js';
-import { collapseText } from './ui.js';
+import { collapseText, startSpinner, stopSpinner } from './ui.js';
 
 export type ToolExecutor = (name: string, args: Record<string, any>) => Promise<string>;
 
@@ -106,6 +106,7 @@ export class Brain {
   private async chatOpenAI(toolExecutor?: ToolExecutor): Promise<string> {
     const client = await this.getClient();
     while (true) {
+      startSpinner();
       const resp = await client.chat.completions.create({
         model: this.config.defaultModel,
         messages: [{ role: 'system', content: this.systemPrompt }, ...this.messages],
@@ -113,6 +114,7 @@ export class Brain {
         max_tokens: this.config.maxTokens,
         temperature: this.config.temperature,
       });
+      stopSpinner(resp.usage);
       const msg = resp.choices[0].message;
 
       if (!msg.tool_calls || msg.tool_calls.length === 0) {
@@ -157,6 +159,7 @@ export class Brain {
     }
 
     while (true) {
+      startSpinner();
       const resp = await client.messages.create({
         model: this.config.defaultModel,
         max_tokens: this.config.maxTokens,
@@ -165,6 +168,7 @@ export class Brain {
         messages: apiMessages,
         tools,
       });
+      stopSpinner(resp.usage ? { prompt_tokens: resp.usage.input_tokens, completion_tokens: resp.usage.output_tokens } : undefined);
 
       const hasToolUse = resp.content.some((b: any) => b.type === 'tool_use');
       if (!hasToolUse) {
