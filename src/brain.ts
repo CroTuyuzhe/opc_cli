@@ -113,7 +113,7 @@ export class Brain {
       }
 
       if (msg.content) {
-        console.log(`\n${msg.content}\n`);
+        console.log(`\n${msg.content}`);
       }
 
       this.messages.push({ ...msg });
@@ -170,7 +170,7 @@ export class Brain {
         if (block.type === 'text') {
           assistantContent.push({ type: 'text', text: block.text });
           if (block.text) {
-            console.log(`\n${block.text}\n`);
+            console.log(`\n${block.text}`);
           }
         } else if (block.type === 'tool_use') {
           assistantContent.push({

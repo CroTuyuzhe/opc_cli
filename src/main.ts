@@ -527,7 +527,7 @@ class OPCApp {
   private async uninstall() {
     console.log(chalk.bold.red('⚠ Uninstall OPC'));
     console.log('This will:');
-    console.log('  1. npm uninstall -g opc-agent');
+    console.log('  1. npm uninstall -g @crotuyuzhe/opc-cli');
     console.log('  2. Remove ~/.opc/ config directory');
 
     const answer = await ui.promptUserAnswer();
@@ -536,7 +536,7 @@ class OPCApp {
       return;
     }
     try {
-      execSync('npm uninstall -g opc-agent', { stdio: 'inherit' });
+      execSync('npm uninstall -g @crotuyuzhe/opc-cli', { stdio: 'inherit' });
     } catch {}
     const opcHome = path.join(process.env.HOME ?? '~', '.opc');
     if (fs.existsSync(opcHome)) {

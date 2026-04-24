@@ -167,7 +167,8 @@ export function printInterventionBlock(state: string) {
 
 export function printDeepthinkQuestion(role: string, question: string) {
   const label = ROLE_LABEL[role] ?? role;
-  console.log(`\n  ${chalk.yellow('?')} ${chalk.bold(`${label} asks:`)} ${question}`);
+  console.log(chalk.dim('  ─'.repeat(20)));
+  console.log(`  ${chalk.yellow('?')} ${chalk.bold(`${label} asks:`)} ${question}`);
 }
 
 export function printTaskNotification(role: string, taskTitle: string, summary: string, artifactPath = '') {
@@ -195,8 +196,10 @@ export function printBashOutput(stdout: string, stderr: string, returncode: numb
 
 export async function promptUserAnswer(): Promise<string> {
   try {
-    const answer = await rlQuestion('  Your answer: ');
-    return answer.trim() || '(no answer)';
+    const answer = await rlQuestion(`  ${chalk.bgGray.white(' > ')} `);
+    const trimmed = answer.trim() || '(no answer)';
+    console.log(`  ${chalk.bgGray.white(` ${trimmed} `)}`);
+    return trimmed;
   } catch {
     return '(skipped)';
   }
