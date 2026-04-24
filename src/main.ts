@@ -47,6 +47,7 @@ class OPCApp {
   runner!: AgentRunner;
   skills!: SkillLoader;
   compact = false;
+  private bashAutoApprove = false;
   private bgPromises: Map<string, Promise<DoneTask>> = new Map();
   private doneQueue: DoneTask[] = [];
 
@@ -288,8 +289,15 @@ class OPCApp {
   }
 
   private async executeBash(command: string, description: string): Promise<string> {
-    const approved = await ui.promptBashApproval(command, description);
-    if (!approved) return 'User denied execution.';
+    if (!this.bashAutoApprove) {
+      const answer = await ui.promptBashApproval(command, description);
+      if (answer === 'no') return 'User denied execution.';
+      if (answer === 'always') this.bashAutoApprove = true;
+    } else {
+      console.log();
+      if (description) console.log(`  ${chalk.dim(description)}`);
+      console.log(`  ${chalk.bold.yellow('$')} ${chalk.white(command)}  ${chalk.dim('(auto-approved)')}`);
+    }
 
     try {
       const result = execSync(command, {

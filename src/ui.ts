@@ -224,15 +224,25 @@ export async function promptUserSelect(options: Array<{ label: string; value: st
   }
 }
 
-export async function promptBashApproval(command: string, description = ''): Promise<boolean> {
+export async function promptBashApproval(command: string, description = ''): Promise<'yes' | 'always' | 'no'> {
   console.log();
   if (description) console.log(`  ${chalk.dim(description)}`);
   console.log(`  ${chalk.bold.yellow('$')} ${chalk.white(command)}`);
   console.log();
   try {
-    const answer = await rlQuestion('  Run this command? (y/n): ');
-    return ['y', 'yes'].includes(answer.trim().toLowerCase());
+    if (_rl) _rl.pause();
+    const answer = await select({
+      message: 'Run this command?',
+      choices: [
+        { name: 'Yes', value: 'yes' },
+        { name: 'Always approve for this session', value: 'always' },
+        { name: 'No', value: 'no' },
+      ],
+    });
+    if (_rl) _rl.resume();
+    return answer as 'yes' | 'always' | 'no';
   } catch {
-    return false;
+    if (_rl) _rl.resume();
+    return 'no';
   }
 }
