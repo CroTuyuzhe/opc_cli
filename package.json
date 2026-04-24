@@ -1,6 +1,6 @@
 {
   "name": "@crotuyuzhe/opc-cli",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "description": "OPC - AI multi-agent team orchestrator CLI",
   "type": "module",
   "bin": {

@@ -196,9 +196,9 @@ export function printBashOutput(stdout: string, stderr: string, returncode: numb
 
 export async function promptUserAnswer(): Promise<string> {
   try {
-    const answer = await rlQuestion(`  ${chalk.bgGray.white(' > ')} `);
+    const answer = await rlQuestion(`  ${chalk.bgHex('#1e3a5f').white(' > ')} `);
     const trimmed = answer.trim() || '(no answer)';
-    console.log(`  ${chalk.bgGray.white(` ${trimmed} `)}`);
+    console.log(`  ${chalk.bgHex('#1e3a5f').white(` ${trimmed} `)}`);
     return trimmed;
   } catch {
     return '(skipped)';
