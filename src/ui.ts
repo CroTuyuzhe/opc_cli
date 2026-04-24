@@ -276,6 +276,7 @@ export function printBashOutput(stdout: string, stderr: string, returncode: numb
 }
 
 export async function promptUserAnswer(): Promise<string> {
+  stopSpinner();
   try {
     const answer = await rlQuestion(`  ${chalk.bgHex('#1e3a5f').white(' > ')} `);
     const trimmed = answer.trim() || '(no answer)';

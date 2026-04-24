@@ -639,6 +639,7 @@ async function main() {
   }, 2000);
 
   const askQuestion = (): void => {
+    ui.stopSpinner();
     app.drainNotifications();
     _replIdle = true;
     rl.question('opc > ', async (input) => {
