@@ -635,6 +635,16 @@ async function main() {
   _mainRl = rl;
   ui.setReadline(rl);
 
+  if (process.stdin.isTTY) {
+    process.stdin.on('keypress', (_str: string, key: any) => {
+      if (key?.name === 'backspace' && _replIdle && !_processing && _mainRl) {
+        setImmediate(() => {
+          (_mainRl as any)?._refreshLine?.();
+        });
+      }
+    });
+  }
+
   setInterval(() => {
     if (_replIdle && _mainRl && !ui.isPromptActive() && app.hasPendingNotifications()) {
       interruptPrompt(_mainRl, () => app.drainNotifications());
