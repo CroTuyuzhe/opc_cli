@@ -74,7 +74,9 @@ export class LineEditor {
   private completions: Array<{ cmd: string; desc: string }> = [];
   private completionIdx = -1;
   private completionActive = false;
-  private expandedContent: string | null = null;
+  private inPager = false;
+  private pagerLines: string[] = [];
+  private pagerOffset = 0;
 
   constructor(inputPrompt: string, label = 'opc') {
     this.inputPrompt = inputPrompt;
@@ -111,7 +113,6 @@ export class LineEditor {
     return new Promise((resolve) => {
       this.buf = [];
       this.cursor = 0;
-      this.expandedContent = null;
       this._active = true;
       this.resolveFn = resolve;
       this.drawFull();
@@ -144,7 +145,6 @@ export class LineEditor {
   }
 
   private finishSubmit(result: string): void {
-    this.expandedContent = null;
     this.resetCompletions();
     this.cleanup();
     process.stdout.write('\x1b[G\x1b[J');
@@ -155,7 +155,6 @@ export class LineEditor {
   }
 
   private finishCancel(): void {
-    this.expandedContent = null;
     this.resetCompletions();
     this.cleanup();
     process.stdout.write('\x1b[A\x1b[G\x1b[J');
@@ -164,7 +163,6 @@ export class LineEditor {
   }
 
   private finishExit(): void {
-    this.expandedContent = null;
     this.resetCompletions();
     this.cleanup();
     process.stdout.write('\x1b[A\x1b[G\x1b[J');
@@ -177,6 +175,24 @@ export class LineEditor {
       const cp = data.codePointAt(i)!;
       const ch = String.fromCodePoint(cp);
       i += ch.length;
+
+      if (this.inPager) {
+        if (cp === 16 || cp === 3) { this.exitPager(); continue; }
+        if (cp === 27 && i < data.length && data[i] === '[') {
+          i++;
+          if (i < data.length) {
+            const code = data[i]; i++;
+            const rows = process.stdout.rows || 24;
+            const viewable = rows - 2;
+            const maxOffset = Math.max(0, this.pagerLines.length - viewable);
+            if (code === 'A' && this.pagerOffset > 0) { this.pagerOffset--; this.renderPager(); }
+            else if (code === 'B' && this.pagerOffset < maxOffset) { this.pagerOffset++; this.renderPager(); }
+          }
+        } else if (cp === 27) {
+          this.exitPager();
+        }
+        continue;
+      }
 
       // Bracketed paste: \x1b[200~ ... \x1b[201~
       if (cp === 27 && data.startsWith('[200~', i)) {
@@ -244,20 +260,8 @@ export class LineEditor {
       if (cp === 5) { this.cursor = this.buf.length; this.redraw(); continue; }
       if (cp === 21) { this.buf.splice(0, this.cursor); this.cursor = 0; this.redraw(); continue; }
       if (cp === 11) { this.buf.splice(this.cursor); this.redraw(); continue; }
-      if (cp === 15) {
-        if (!this.expandedContent && _lastCollapsed) {
-          this.expandedContent = _lastCollapsed;
-          this.redraw();
-        }
-        continue;
-      }
-      if (cp === 16) {
-        if (this.expandedContent) {
-          this.expandedContent = null;
-          this.redraw();
-        }
-        continue;
-      }
+      if (cp === 15 && _lastCollapsed) { this.enterPager(); continue; }
+      if (cp === 16 && this.inPager) { this.exitPager(); continue; }
       if (cp === 23) {
         while (this.cursor > 0 && this.buf[this.cursor - 1] === ' ') { this.buf.splice(this.cursor - 1, 1); this.cursor--; }
         while (this.cursor > 0 && this.buf[this.cursor - 1] !== ' ') { this.buf.splice(this.cursor - 1, 1); this.cursor--; }
@@ -286,21 +290,38 @@ export class LineEditor {
       }
     }
 
-    let expandedLineCount = 0;
-    if (this.expandedContent) {
-      const lines = this.expandedContent.split('\n');
-      expandedLineCount = lines.length + 1;
-      process.stdout.write('\n' + chalk.dim('─── expanded (Ctrl+P to collapse) ───'));
-      for (const line of lines) {
-        process.stdout.write('\n' + line);
-      }
-    }
-
     const menuLines = this.completionActive ? this.completions.length : 0;
-    const up = 1 + menuLines + expandedLineCount;
+    const up = 1 + menuLines;
     process.stdout.write(`\x1b[${up}A`);
     const col = stringDisplayWidth(this.inputPrompt) + this.widthSlice(0, this.cursor);
     readline.cursorTo(process.stdout, col);
+  }
+
+  private enterPager(): void {
+    if (!_lastCollapsed) return;
+    this.inPager = true;
+    this.pagerLines = _lastCollapsed.split('\n');
+    this.pagerOffset = 0;
+    process.stdout.write('\x1b[?1049h');
+    this.renderPager();
+  }
+
+  private renderPager(): void {
+    const rows = process.stdout.rows || 24;
+    const viewable = rows - 2;
+    process.stdout.write('\x1b[H\x1b[J');
+    const total = this.pagerLines.length;
+    const end = Math.min(this.pagerOffset + viewable, total);
+    process.stdout.write(chalk.dim(`─── expanded ${this.pagerOffset + 1}-${end}/${total} (↑↓ scroll, Ctrl+P to close) ───`) + '\n');
+    for (let i = this.pagerOffset; i < end; i++) {
+      process.stdout.write(this.pagerLines[i] + '\n');
+    }
+  }
+
+  private exitPager(): void {
+    this.inPager = false;
+    this.pagerLines = [];
+    process.stdout.write('\x1b[?1049l');
   }
 
   private widthSlice(start: number, end: number): number {
