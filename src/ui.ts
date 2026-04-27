@@ -54,7 +54,6 @@ export const SLASH_COMMANDS: Array<{ cmd: string; desc: string }> = [
   { cmd: '/new', desc: 'Start fresh conversation' },
   { cmd: '/task', desc: 'List or manage tasks' },
   { cmd: '/superagent', desc: 'Toggle SuperAgent mode' },
-  { cmd: '/expand', desc: 'Expand last collapsed output' },
   { cmd: '/compact', desc: 'Toggle compact output' },
   { cmd: '/uninstall', desc: 'Remove OPC from system' },
   { cmd: '/help', desc: 'Show help' },
@@ -75,6 +74,8 @@ export class LineEditor {
   private completions: Array<{ cmd: string; desc: string }> = [];
   private completionIdx = -1;
   private completionActive = false;
+  onExpand: (() => void) | null = null;
+  onCollapse: (() => void) | null = null;
 
   constructor(inputPrompt: string, label = 'opc') {
     this.inputPrompt = inputPrompt;
@@ -240,6 +241,8 @@ export class LineEditor {
       if (cp === 5) { this.cursor = this.buf.length; this.redraw(); continue; }
       if (cp === 21) { this.buf.splice(0, this.cursor); this.cursor = 0; this.redraw(); continue; }
       if (cp === 11) { this.buf.splice(this.cursor); this.redraw(); continue; }
+      if (cp === 15 && this.onExpand) { this.interrupt(() => this.onExpand!()); continue; }
+      if (cp === 16 && this.onCollapse) { this.interrupt(() => this.onCollapse!()); continue; }
       if (cp === 23) {
         while (this.cursor > 0 && this.buf[this.cursor - 1] === ' ') { this.buf.splice(this.cursor - 1, 1); this.cursor--; }
         while (this.cursor > 0 && this.buf[this.cursor - 1] !== ' ') { this.buf.splice(this.cursor - 1, 1); this.cursor--; }
@@ -571,7 +574,7 @@ export function collapseText(text: string, indent = '  '): string {
   const hidden = lines.length - COLLAPSE_THRESHOLD;
   return [
     ...shown.map(l => `${indent}${l}`),
-    `${indent}${chalk.dim(`... +${hidden} lines`)} ${chalk.dim('(/expand)')}`,
+    `${indent}${chalk.dim(`... +${hidden} lines (Ctrl+O)`)}`,
   ].join('\n');
 }
 
