@@ -431,6 +431,13 @@ class OPCApp {
       ui.printSkills(this.skills.listSkills());
     } else if (command === '/help') {
       ui.printHelp();
+    } else if (command === '/expand') {
+      const last = ui.getLastCollapsed();
+      if (last) {
+        console.log(ui.formatText(last, ''));
+      } else {
+        console.log(chalk.dim('Nothing to expand'));
+      }
     } else if (command === '/compact') {
       this.compact = !this.compact;
       console.log(`Compact mode: ${this.compact ? 'on' : 'off'}`);
@@ -678,7 +685,9 @@ class OPCApp {
         userInput,
         (name, args) => this.executeTool(name, args)
       );
-      if (response) console.log(ui.collapseText(response, ''));
+      if (response) {
+        console.log(this.compact ? ui.collapseText(response, '') : ui.formatText(response, ''));
+      }
     } catch (e: any) {
       ui.printError(`Error: ${e.message}`);
     }

@@ -54,6 +54,7 @@ export const SLASH_COMMANDS: Array<{ cmd: string; desc: string }> = [
   { cmd: '/new', desc: 'Start fresh conversation' },
   { cmd: '/task', desc: 'List or manage tasks' },
   { cmd: '/superagent', desc: 'Toggle SuperAgent mode' },
+  { cmd: '/expand', desc: 'Expand last collapsed output' },
   { cmd: '/compact', desc: 'Toggle compact output' },
   { cmd: '/uninstall', desc: 'Remove OPC from system' },
   { cmd: '/help', desc: 'Show help' },
@@ -552,16 +553,25 @@ export function printTaskNotification(role: string, taskTitle: string, summary: 
   console.log(boxen(text, { padding: 1, borderColor: 'green', title: 'Task Completed', titleAlignment: 'left' }));
 }
 
+let _lastCollapsed: string | null = null;
+
+export function getLastCollapsed(): string | null { return _lastCollapsed; }
+
+export function formatText(text: string, indent = '  '): string {
+  return text.split('\n').map(l => `${indent}${l}`).join('\n');
+}
+
 export function collapseText(text: string, indent = '  '): string {
   const lines = text.split('\n');
   if (lines.length <= COLLAPSE_THRESHOLD) {
     return lines.map(l => `${indent}${l}`).join('\n');
   }
+  _lastCollapsed = text;
   const shown = lines.slice(0, COLLAPSE_THRESHOLD);
   const hidden = lines.length - COLLAPSE_THRESHOLD;
   return [
     ...shown.map(l => `${indent}${l}`),
-    `${indent}${chalk.dim(`... +${hidden} lines`)}`,
+    `${indent}${chalk.dim(`... +${hidden} lines`)} ${chalk.dim('(/expand)')}`,
   ].join('\n');
 }
 
