@@ -7,6 +7,155 @@ import readline from 'readline';
 
 const COLLAPSE_THRESHOLD = 5;
 
+// === CJK display width ===
+
+function isWideChar(cp: number): boolean {
+  return (
+    (cp >= 0x1100 && cp <= 0x115f) ||
+    (cp >= 0x2e80 && cp <= 0x303e) ||
+    (cp >= 0x3041 && cp <= 0x33bf) ||
+    (cp >= 0x3400 && cp <= 0x4dbf) ||
+    (cp >= 0x4e00 && cp <= 0xa4cf) ||
+    (cp >= 0xa960 && cp <= 0xa97c) ||
+    (cp >= 0xac00 && cp <= 0xd7a3) ||
+    (cp >= 0xf900 && cp <= 0xfaff) ||
+    (cp >= 0xfe10 && cp <= 0xfe19) ||
+    (cp >= 0xfe30 && cp <= 0xfe6f) ||
+    (cp >= 0xff01 && cp <= 0xff60) ||
+    (cp >= 0xffe0 && cp <= 0xffe6) ||
+    (cp >= 0x20000 && cp <= 0x3fffd)
+  );
+}
+
+function charDisplayWidth(ch: string): number {
+  const cp = ch.codePointAt(0) ?? 0;
+  if (cp < 0x20) return 0;
+  return isWideChar(cp) ? 2 : 1;
+}
+
+export function stringDisplayWidth(str: string): number {
+  let w = 0;
+  for (const ch of str) w += charDisplayWidth(ch);
+  return w;
+}
+
+// === Custom Line Editor (replaces readline for REPL input) ===
+
+export class LineEditor {
+  private prompt: string;
+  private buf: string[] = [];
+  private cursor = 0;
+  private _active = false;
+  private resolveFn: ((line: string | null) => void) | null = null;
+  private boundOnData: ((data: string) => void) | null = null;
+
+  constructor(prompt: string) {
+    this.prompt = prompt;
+  }
+
+  setPrompt(p: string) { this.prompt = p; }
+  isActive(): boolean { return this._active; }
+
+  readLine(): Promise<string | null> {
+    return new Promise((resolve) => {
+      this.buf = [];
+      this.cursor = 0;
+      this._active = true;
+      this.resolveFn = resolve;
+      process.stdout.write(this.prompt);
+      if (process.stdin.isTTY) process.stdin.setRawMode(true);
+      process.stdin.setEncoding('utf-8');
+      process.stdin.resume();
+      this.boundOnData = (data: string) => this.onData(data);
+      process.stdin.on('data', this.boundOnData);
+    });
+  }
+
+  interrupt(writeFn: () => void): void {
+    if (!this._active) return;
+    readline.cursorTo(process.stdout, 0);
+    readline.clearLine(process.stdout, 0);
+    writeFn();
+    this.redraw();
+  }
+
+  private cleanup(): void {
+    this._active = false;
+    if (this.boundOnData) {
+      process.stdin.removeListener('data', this.boundOnData);
+      this.boundOnData = null;
+    }
+    if (process.stdin.isTTY) process.stdin.setRawMode(false);
+    process.stdin.pause();
+  }
+
+  private finish(result: string | null): void {
+    this.cleanup();
+    process.stdout.write('\n');
+    this.resolveFn?.(result);
+    this.resolveFn = null;
+  }
+
+  private onData(data: string): void {
+    for (let i = 0; i < data.length; ) {
+      const cp = data.codePointAt(i)!;
+      const ch = String.fromCodePoint(cp);
+      i += ch.length;
+
+      if (cp === 27 && i < data.length && data[i] === '[') {
+        i++;
+        if (i < data.length) {
+          const code = data[i]; i++;
+          if (code === 'C' && this.cursor < this.buf.length) { this.cursor++; this.redraw(); }
+          else if (code === 'D' && this.cursor > 0) { this.cursor--; this.redraw(); }
+          else if (code === 'H') { this.cursor = 0; this.redraw(); }
+          else if (code === 'F') { this.cursor = this.buf.length; this.redraw(); }
+          else if (code === '3' && i < data.length && data[i] === '~') {
+            i++;
+            if (this.cursor < this.buf.length) { this.buf.splice(this.cursor, 1); this.redraw(); }
+          }
+        }
+        continue;
+      }
+      if (cp === 27) continue;
+
+      if (cp === 3) { this.finish(''); return; }
+      if (cp === 4 && this.buf.length === 0) { this.finish(null); return; }
+      if (cp === 4) continue;
+      if (cp === 13 || cp === 10) { this.finish(this.buf.join('')); return; }
+
+      if (cp === 127 || cp === 8) {
+        if (this.cursor > 0) { this.buf.splice(this.cursor - 1, 1); this.cursor--; this.redraw(); }
+        continue;
+      }
+      if (cp === 1) { this.cursor = 0; this.redraw(); continue; }
+      if (cp === 5) { this.cursor = this.buf.length; this.redraw(); continue; }
+      if (cp === 21) { this.buf.splice(0, this.cursor); this.cursor = 0; this.redraw(); continue; }
+      if (cp === 11) { this.buf.splice(this.cursor); this.redraw(); continue; }
+      if (cp === 23) {
+        while (this.cursor > 0 && this.buf[this.cursor - 1] === ' ') { this.buf.splice(this.cursor - 1, 1); this.cursor--; }
+        while (this.cursor > 0 && this.buf[this.cursor - 1] !== ' ') { this.buf.splice(this.cursor - 1, 1); this.cursor--; }
+        this.redraw(); continue;
+      }
+      if (cp >= 32) { this.buf.splice(this.cursor, 0, ch); this.cursor++; this.redraw(); }
+    }
+  }
+
+  private redraw(): void {
+    readline.cursorTo(process.stdout, 0);
+    readline.clearLine(process.stdout, 0);
+    process.stdout.write(this.prompt + this.buf.join(''));
+    const col = stringDisplayWidth(this.prompt) + this.widthSlice(0, this.cursor);
+    readline.cursorTo(process.stdout, col);
+  }
+
+  private widthSlice(start: number, end: number): number {
+    let w = 0;
+    for (let i = start; i < end && i < this.buf.length; i++) w += charDisplayWidth(this.buf[i]);
+    return w;
+  }
+}
+
 const SPINNER_VERBS = [
   'Thinking', 'Reasoning', 'Analyzing', 'Planning', 'Composing',
   'Synthesizing', 'Processing', 'Evaluating', 'Crafting', 'Exploring',

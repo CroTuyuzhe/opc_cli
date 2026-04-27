@@ -28,19 +28,8 @@ interface DoneTask {
   artifact: string;
 }
 
-let _mainRl: readline.Interface | null = null;
+let _editor: ui.LineEditor | null = null;
 let _replIdle = false;
-
-function interruptPrompt(rl: readline.Interface, writeFn: () => void): void {
-  const savedLine = (rl as any).line ?? '';
-  readline.clearLine(process.stdout, 0);
-  readline.cursorTo(process.stdout, 0);
-  writeFn();
-  (rl as any).line = '';
-  (rl as any).cursor = 0;
-  rl.prompt();
-  if (savedLine) rl.write(savedLine);
-}
 
 class OPCApp {
   config!: Config;
@@ -253,8 +242,8 @@ class OPCApp {
     promise.then(done => {
       this.doneQueue.push(done);
       this.bgPromises.delete(taskId);
-      if (_replIdle && _mainRl && !ui.isPromptActive()) {
-        interruptPrompt(_mainRl, () => this.drainNotifications());
+      if (_replIdle && _editor?.isActive()) {
+        _editor.interrupt(() => this.drainNotifications());
       }
     });
 
@@ -626,58 +615,38 @@ async function main() {
   const historyDir = path.join(process.env.HOME ?? '~', '.opc');
   fs.ensureDirSync(historyDir);
 
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-    prompt: 'opc > ',
-  });
-
-  _mainRl = rl;
-  ui.setReadline(rl);
-
-  if (process.stdin.isTTY) {
-    process.stdin.on('keypress', (_str: string, key: any) => {
-      if (key?.name === 'backspace' && _replIdle && !_processing && _mainRl) {
-        setImmediate(() => {
-          (_mainRl as any)?._refreshLine?.();
-        });
-      }
-    });
-  }
+  const editor = new ui.LineEditor('opc > ');
+  _editor = editor;
 
   setInterval(() => {
-    if (_replIdle && _mainRl && !ui.isPromptActive() && app.hasPendingNotifications()) {
-      interruptPrompt(_mainRl, () => app.drainNotifications());
+    if (_replIdle && _editor?.isActive() && app.hasPendingNotifications()) {
+      _editor.interrupt(() => app.drainNotifications());
     }
   }, 2000);
 
-  let _processing = false;
+  app.drainNotifications();
+  _replIdle = true;
 
-  rl.setPrompt('opc > ');
-
-  let _exiting = false;
-
-  rl.on('line', async (input) => {
-    if (_processing || _exiting) return;
+  while (true) {
+    const input = await editor.readLine();
     _replIdle = false;
-    _processing = true;
-    rl.pause();
+
+    if (input === null) {
+      console.log('Bye.');
+      break;
+    }
+
+    const trimmed = input.trim();
+    if (!trimmed) { _replIdle = true; continue; }
+
+    readline.moveCursor(process.stdout, 0, -1);
+    readline.clearLine(process.stdout, 0);
+    console.log(chalk.bgHex('#1e3a5f').white(` > ${trimmed} `));
 
     try {
-      const trimmed = input.trim();
-      if (!trimmed) return;
-
-      readline.moveCursor(process.stdout, 0, -1);
-      readline.clearLine(process.stdout, 0);
-      console.log(chalk.bgHex('#1e3a5f').white(` > ${trimmed} `));
-
       if (trimmed.startsWith('/')) {
         const shouldExit = app.handleSlash(trimmed);
-        if (shouldExit) {
-          _exiting = true;
-          rl.close();
-          return;
-        }
+        if (shouldExit) break;
       } else {
         await app.chat(trimmed);
       }
@@ -685,23 +654,12 @@ async function main() {
       ui.printError(`Error: ${e.message}`);
     } finally {
       ui.stopSpinner();
-      if (!_exiting) {
-        app.drainNotifications();
-        _replIdle = true;
-        _processing = false;
-        rl.prompt();
-      }
+      app.drainNotifications();
+      _replIdle = true;
     }
-  });
+  }
 
-  rl.on('close', () => {
-    console.log('\nBye.');
-    process.exit(0);
-  });
-
-  app.drainNotifications();
-  _replIdle = true;
-  rl.prompt();
+  process.exit(0);
 }
 
 process.on('uncaughtException', (err) => {
