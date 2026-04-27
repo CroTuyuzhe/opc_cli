@@ -723,20 +723,6 @@ async function main() {
   const editor = new ui.LineEditor(chalk.cyan('❯') + ' ', 'opc');
   _editor = editor;
 
-  editor.onExpand = () => {
-    const last = ui.getLastCollapsed();
-    if (last) {
-      console.log(ui.formatText(last, ''));
-    } else {
-      console.log(chalk.dim('  Nothing to expand'));
-    }
-  };
-
-  editor.onCollapse = () => {
-    app.compact = !app.compact;
-    console.log(`  Compact mode: ${app.compact ? chalk.green('on') : chalk.dim('off')}`);
-  };
-
   setInterval(() => {
     if (_replIdle && _editor?.isActive() && app.hasPendingNotifications()) {
       _editor.interrupt(() => app.drainNotifications());

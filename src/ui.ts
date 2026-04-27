@@ -74,8 +74,7 @@ export class LineEditor {
   private completions: Array<{ cmd: string; desc: string }> = [];
   private completionIdx = -1;
   private completionActive = false;
-  onExpand: (() => void) | null = null;
-  onCollapse: (() => void) | null = null;
+  private expandedContent: string | null = null;
 
   constructor(inputPrompt: string, label = 'opc') {
     this.inputPrompt = inputPrompt;
@@ -112,6 +111,7 @@ export class LineEditor {
     return new Promise((resolve) => {
       this.buf = [];
       this.cursor = 0;
+      this.expandedContent = null;
       this._active = true;
       this.resolveFn = resolve;
       this.drawFull();
@@ -144,6 +144,7 @@ export class LineEditor {
   }
 
   private finishSubmit(result: string): void {
+    this.expandedContent = null;
     this.resetCompletions();
     this.cleanup();
     process.stdout.write('\x1b[G\x1b[J');
@@ -154,6 +155,7 @@ export class LineEditor {
   }
 
   private finishCancel(): void {
+    this.expandedContent = null;
     this.resetCompletions();
     this.cleanup();
     process.stdout.write('\x1b[A\x1b[G\x1b[J');
@@ -162,6 +164,7 @@ export class LineEditor {
   }
 
   private finishExit(): void {
+    this.expandedContent = null;
     this.resetCompletions();
     this.cleanup();
     process.stdout.write('\x1b[A\x1b[G\x1b[J');
@@ -241,8 +244,20 @@ export class LineEditor {
       if (cp === 5) { this.cursor = this.buf.length; this.redraw(); continue; }
       if (cp === 21) { this.buf.splice(0, this.cursor); this.cursor = 0; this.redraw(); continue; }
       if (cp === 11) { this.buf.splice(this.cursor); this.redraw(); continue; }
-      if (cp === 15 && this.onExpand) { this.interrupt(() => this.onExpand!()); continue; }
-      if (cp === 16 && this.onCollapse) { this.interrupt(() => this.onCollapse!()); continue; }
+      if (cp === 15) {
+        if (!this.expandedContent && _lastCollapsed) {
+          this.expandedContent = _lastCollapsed;
+          this.redraw();
+        }
+        continue;
+      }
+      if (cp === 16) {
+        if (this.expandedContent) {
+          this.expandedContent = null;
+          this.redraw();
+        }
+        continue;
+      }
       if (cp === 23) {
         while (this.cursor > 0 && this.buf[this.cursor - 1] === ' ') { this.buf.splice(this.cursor - 1, 1); this.cursor--; }
         while (this.cursor > 0 && this.buf[this.cursor - 1] !== ' ') { this.buf.splice(this.cursor - 1, 1); this.cursor--; }
@@ -271,8 +286,18 @@ export class LineEditor {
       }
     }
 
+    let expandedLineCount = 0;
+    if (this.expandedContent) {
+      const lines = this.expandedContent.split('\n');
+      expandedLineCount = lines.length + 1;
+      process.stdout.write('\n' + chalk.dim('─── expanded (Ctrl+P to collapse) ───'));
+      for (const line of lines) {
+        process.stdout.write('\n' + line);
+      }
+    }
+
     const menuLines = this.completionActive ? this.completions.length : 0;
-    const up = 1 + menuLines;
+    const up = 1 + menuLines + expandedLineCount;
     process.stdout.write(`\x1b[${up}A`);
     const col = stringDisplayWidth(this.inputPrompt) + this.widthSlice(0, this.cursor);
     readline.cursorTo(process.stdout, col);
