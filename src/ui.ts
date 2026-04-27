@@ -42,6 +42,24 @@ export function stringDisplayWidth(str: string): number {
   return w;
 }
 
+// === Slash command registry (shared by help + autocomplete) ===
+
+export const SLASH_COMMANDS: Array<{ cmd: string; desc: string }> = [
+  { cmd: '/status', desc: 'Show agent status' },
+  { cmd: '/tasks', desc: 'Show task queue' },
+  { cmd: '/inbox', desc: 'View role inbox' },
+  { cmd: '/dispatch', desc: 'Manually dispatch a task' },
+  { cmd: '/skills', desc: 'List available tools' },
+  { cmd: '/skill', desc: 'Manage installed skills' },
+  { cmd: '/new', desc: 'Start fresh conversation' },
+  { cmd: '/task', desc: 'List or manage tasks' },
+  { cmd: '/superagent', desc: 'Toggle SuperAgent mode' },
+  { cmd: '/compact', desc: 'Toggle compact output' },
+  { cmd: '/uninstall', desc: 'Remove OPC from system' },
+  { cmd: '/help', desc: 'Show help' },
+  { cmd: '/exit', desc: 'Quit' },
+];
+
 // === Custom Line Editor (replaces readline for REPL input) ===
 
 export class LineEditor {
@@ -53,6 +71,9 @@ export class LineEditor {
   private resolveFn: ((line: string | null) => void) | null = null;
   private boundOnData: ((data: string) => void) | null = null;
   private pasting = false;
+  private completions: Array<{ cmd: string; desc: string }> = [];
+  private completionIdx = -1;
+  private completionActive = false;
 
   constructor(inputPrompt: string, label = 'opc') {
     this.inputPrompt = inputPrompt;
@@ -121,6 +142,7 @@ export class LineEditor {
   }
 
   private finishSubmit(result: string): void {
+    this.resetCompletions();
     this.cleanup();
     process.stdout.write('\x1b[G\x1b[J');
     process.stdout.write(this.inputPrompt + this.buf.join('') + '\n');
@@ -130,6 +152,7 @@ export class LineEditor {
   }
 
   private finishCancel(): void {
+    this.resetCompletions();
     this.cleanup();
     process.stdout.write('\x1b[A\x1b[G\x1b[J');
     this.resolveFn?.('');
@@ -137,6 +160,7 @@ export class LineEditor {
   }
 
   private finishExit(): void {
+    this.resetCompletions();
     this.cleanup();
     process.stdout.write('\x1b[A\x1b[G\x1b[J');
     this.resolveFn?.(null);
@@ -170,6 +194,16 @@ export class LineEditor {
         i++;
         if (i < data.length) {
           const code = data[i]; i++;
+          if (code === 'A' && this.completionActive) {
+            if (this.completionIdx > 0) this.completionIdx--;
+            this.redrawMenu();
+            continue;
+          }
+          if (code === 'B' && this.completionActive) {
+            if (this.completionIdx < this.completions.length - 1) this.completionIdx++;
+            this.redrawMenu();
+            continue;
+          }
           if (code === 'C' && this.cursor < this.buf.length) { this.cursor++; this.redraw(); }
           else if (code === 'D' && this.cursor > 0) { this.cursor--; this.redraw(); }
           else if (code === 'H') { this.cursor = 0; this.redraw(); }
@@ -181,12 +215,21 @@ export class LineEditor {
         }
         continue;
       }
-      if (cp === 27) continue;
+      if (cp === 27) {
+        if (this.completionActive) { this.resetCompletions(); this.redraw(); }
+        continue;
+      }
 
-      if (cp === 3) { this.finishCancel(); return; }
-      if (cp === 4 && this.buf.length === 0) { this.finishExit(); return; }
+      if (cp === 9 && this.completionActive && this.completionIdx >= 0) {
+        this.applyCompletion(); this.redraw(); continue;
+      }
+      if (cp === 3) { this.resetCompletions(); this.finishCancel(); return; }
+      if (cp === 4 && this.buf.length === 0) { this.resetCompletions(); this.finishExit(); return; }
       if (cp === 4) continue;
-      if (cp === 13 || cp === 10) { this.finishSubmit(this.buf.join('')); return; }
+      if ((cp === 13 || cp === 10) && this.completionActive && this.completionIdx >= 0) {
+        this.applyCompletion(); this.redraw(); continue;
+      }
+      if (cp === 13 || cp === 10) { this.resetCompletions(); this.finishSubmit(this.buf.join('')); return; }
 
       if (cp === 127 || cp === 8) {
         if (this.cursor > 0) { this.buf.splice(this.cursor - 1, 1); this.cursor--; this.redraw(); }
@@ -206,10 +249,27 @@ export class LineEditor {
   }
 
   private redraw(): void {
+    this.updateCompletions();
     process.stdout.write('\x1b[G\x1b[J');
     const text = this.buf.join('');
     process.stdout.write(this.inputPrompt + text + '\n' + this.buildBottomLine());
-    process.stdout.write('\x1b[A');
+
+    if (this.completionActive && this.completions.length > 0) {
+      const maxCmd = Math.max(...this.completions.map(c => c.cmd.length));
+      for (let i = 0; i < this.completions.length; i++) {
+        const c = this.completions[i];
+        const padded = c.cmd.padEnd(maxCmd + 1);
+        if (i === this.completionIdx) {
+          process.stdout.write('\n' + chalk.bgCyan.black(` ${padded}`) + ' ' + chalk.dim(c.desc));
+        } else {
+          process.stdout.write('\n' + chalk.cyan(` ${padded}`) + ' ' + chalk.dim(c.desc));
+        }
+      }
+    }
+
+    const menuLines = this.completionActive ? this.completions.length : 0;
+    const up = 1 + menuLines;
+    process.stdout.write(`\x1b[${up}A`);
     const col = stringDisplayWidth(this.inputPrompt) + this.widthSlice(0, this.cursor);
     readline.cursorTo(process.stdout, col);
   }
@@ -218,6 +278,57 @@ export class LineEditor {
     let w = 0;
     for (let i = start; i < end && i < this.buf.length; i++) w += charDisplayWidth(this.buf[i]);
     return w;
+  }
+
+  private redrawMenu(): void {
+    if (!this.completionActive || this.completions.length === 0) return;
+    process.stdout.write('\x1b[G');
+    process.stdout.write('\x1b[B');
+    process.stdout.write('\x1b[J');
+    const maxCmd = Math.max(...this.completions.map(c => c.cmd.length));
+    for (let i = 0; i < this.completions.length; i++) {
+      const c = this.completions[i];
+      const padded = c.cmd.padEnd(maxCmd + 1);
+      if (i === this.completionIdx) {
+        process.stdout.write('\n' + chalk.bgCyan.black(` ${padded}`) + ' ' + chalk.dim(c.desc));
+      } else {
+        process.stdout.write('\n' + chalk.cyan(` ${padded}`) + ' ' + chalk.dim(c.desc));
+      }
+    }
+    const up = this.completions.length + 1;
+    process.stdout.write(`\x1b[${up}A`);
+    const col = stringDisplayWidth(this.inputPrompt) + this.widthSlice(0, this.cursor);
+    readline.cursorTo(process.stdout, col);
+  }
+
+  private updateCompletions(): void {
+    const text = this.buf.join('');
+    if (text.startsWith('/') && !text.includes(' ') && text.length > 0) {
+      const prefix = text.toLowerCase();
+      this.completions = SLASH_COMMANDS.filter(c => c.cmd.startsWith(prefix));
+      this.completionActive = this.completions.length > 0;
+      this.completionIdx = this.completionActive ? 0 : -1;
+    } else {
+      this.completions = [];
+      this.completionActive = false;
+      this.completionIdx = -1;
+    }
+  }
+
+  private applyCompletion(): void {
+    const selected = this.completions[this.completionIdx];
+    if (!selected) return;
+    this.buf = [...selected.cmd, ' '];
+    this.cursor = this.buf.length;
+    this.completions = [];
+    this.completionActive = false;
+    this.completionIdx = -1;
+  }
+
+  private resetCompletions(): void {
+    this.completions = [];
+    this.completionActive = false;
+    this.completionIdx = -1;
   }
 }
 
@@ -372,27 +483,8 @@ export function printInbox(role: string, tasks: Array<Record<string, any>>) {
 }
 
 export function printHelp() {
-  const cmds: [string, string][] = [
-    ['/status', 'Show agent status'],
-    ['/tasks', 'Show task queue'],
-    ['/inbox <role>', 'View role inbox (pm/dev/ui/tester/admin)'],
-    ['/dispatch', 'Manually dispatch a task'],
-    ['/skills', 'List available tools'],
-    ['/skill list', 'List installed skills'],
-    ['/skill install <url>', 'Install skill from GitHub'],
-    ['/skill remove <name>', 'Remove a skill'],
-    ['/new', 'Start fresh conversation (clear context)'],
-    ['/task', 'List all tasks (active + recent)'],
-    ['/task <id>', 'View task details'],
-    ['/task <id> close', 'Close and archive a task'],
-    ['/superagent on|off', 'Toggle SuperAgent autonomous mode'],
-    ['/compact', 'Toggle compact output'],
-    ['/uninstall', 'Remove OPC from system'],
-    ['/help', 'This help'],
-    ['/exit', 'Quit'],
-  ];
   const table = new Table({ chars: { mid: '', 'left-mid': '', 'mid-mid': '', 'right-mid': '' }, style: { head: [], border: [] } });
-  for (const [cmd, desc] of cmds) {
+  for (const { cmd, desc } of SLASH_COMMANDS) {
     table.push([chalk.cyan(cmd), desc]);
   }
   console.log(table.toString());
