@@ -35,6 +35,7 @@ let _spinnerTimer: ReturnType<typeof setInterval> | null = null;
 let _spinnerVerb = '';
 
 export function startSpinner(): void {
+  if (_spinner) stopSpinner();
   _spinnerVerb = randomVerb();
   _spinnerStart = Date.now();
   _spinner = ora({

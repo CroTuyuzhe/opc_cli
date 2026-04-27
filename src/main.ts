@@ -236,7 +236,7 @@ class OPCApp {
   private runInBackground(role: string, taskId: string) {
     const promise = (async (): Promise<DoneTask> => {
       try {
-        const summary = await this.runner.run(role, taskId);
+        const summary = await this.runner.run(role, taskId, true);
         const root = teamRootPath(this.config);
         const artifactPath = path.join(root, 'workspace', 'artifacts', `${taskId}_${role}.md`);
         const taskInfo = this.bus.listActive(role);

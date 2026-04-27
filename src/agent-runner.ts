@@ -106,7 +106,7 @@ export class AgentRunner {
     this.workspace = workspace;
   }
 
-  async run(role: string, taskId: string): Promise<string> {
+  async run(role: string, taskId: string, silent = false): Promise<string> {
     const task = this.bus.claim(role, taskId);
     if (!task) return `No task ${taskId} in ${role} inbox`;
 
@@ -127,11 +127,11 @@ export class AgentRunner {
     try {
       const toolNames = ROLE_TOOLS[role] ?? [];
       if (toolNames.length > 0) {
-        const result = await this.runWithTools(system, userMsg, role, toolNames);
+        const result = await this.runWithTools(system, userMsg, role, toolNames, silent);
         resultText = result.text;
         writtenFiles = result.files;
       } else {
-        resultText = await this.callLlm(system, userMsg);
+        resultText = await this.callLlm(system, userMsg, silent);
       }
     } catch (e: any) {
       const errorText = `ERROR: ${e.message}`;
@@ -220,19 +220,21 @@ export class AgentRunner {
     system: string,
     userMsg: string,
     role: string,
-    toolNames: string[]
+    toolNames: string[],
+    silent = false
   ): Promise<{ text: string; files: string[] }> {
     if (this.config.provider === 'anthropic') {
-      return this.toolsAnthropic(system, userMsg, role, toolNames);
+      return this.toolsAnthropic(system, userMsg, role, toolNames, silent);
     }
-    return this.toolsOpenAI(system, userMsg, role, toolNames);
+    return this.toolsOpenAI(system, userMsg, role, toolNames, silent);
   }
 
   private async toolsOpenAI(
     system: string,
     userMsg: string,
     role: string,
-    toolNames: string[]
+    toolNames: string[],
+    silent = false
   ): Promise<{ text: string; files: string[] }> {
     const { default: OpenAI } = await import('openai');
     const client = new OpenAI({ apiKey: this.config.apiKey, baseURL: this.config.baseUrl, timeout: 120_000 });
@@ -244,7 +246,7 @@ export class AgentRunner {
     const writtenFiles: string[] = [];
 
     while (true) {
-      ui.startSpinner();
+      if (!silent) ui.startSpinner();
       let resp: any;
       try {
         resp = await client.chat.completions.create({
@@ -255,7 +257,7 @@ export class AgentRunner {
           temperature: this.config.temperature,
         });
       } finally {
-        ui.stopSpinner(resp?.usage);
+        if (!silent) ui.stopSpinner(resp?.usage);
       }
       const msg = resp.choices[0].message;
 
@@ -263,7 +265,7 @@ export class AgentRunner {
         return { text: msg.content ?? '', files: writtenFiles };
       }
 
-      if (msg.content) {
+      if (msg.content && !silent) {
         console.log('\n' + ui.collapseText(msg.content, ''));
       }
 
@@ -287,7 +289,8 @@ export class AgentRunner {
     system: string,
     userMsg: string,
     role: string,
-    toolNames: string[]
+    toolNames: string[],
+    silent = false
   ): Promise<{ text: string; files: string[] }> {
     const { default: Anthropic } = await import('@anthropic-ai/sdk');
     const client = new Anthropic({ apiKey: this.config.apiKey, timeout: 120_000 });
@@ -296,7 +299,7 @@ export class AgentRunner {
     const writtenFiles: string[] = [];
 
     while (true) {
-      ui.startSpinner();
+      if (!silent) ui.startSpinner();
       let resp: any;
       try {
         resp = await client.messages.create({
@@ -308,7 +311,7 @@ export class AgentRunner {
           tools,
         });
       } finally {
-        ui.stopSpinner(resp?.usage ? { prompt_tokens: resp.usage.input_tokens, completion_tokens: resp.usage.output_tokens } : undefined);
+        if (!silent) ui.stopSpinner(resp?.usage ? { prompt_tokens: resp.usage.input_tokens, completion_tokens: resp.usage.output_tokens } : undefined);
       }
 
       const hasToolUse = resp.content.some((b: any) => b.type === 'tool_use');
@@ -326,7 +329,7 @@ export class AgentRunner {
       for (const block of resp.content) {
         if (block.type === 'text') {
           assistantContent.push({ type: 'text', text: block.text });
-          if (block.text) {
+          if (block.text && !silent) {
             console.log('\n' + ui.collapseText(block.text, ''));
           }
         } else if (block.type === 'tool_use') {
@@ -353,17 +356,17 @@ export class AgentRunner {
     }
   }
 
-  private async callLlm(system: string, userMsg: string): Promise<string> {
+  private async callLlm(system: string, userMsg: string, silent = false): Promise<string> {
     if (this.config.provider === 'anthropic') {
-      return this.callAnthropic(system, userMsg);
+      return this.callAnthropic(system, userMsg, silent);
     }
-    return this.callOpenAI(system, userMsg);
+    return this.callOpenAI(system, userMsg, silent);
   }
 
-  private async callOpenAI(system: string, userMsg: string): Promise<string> {
+  private async callOpenAI(system: string, userMsg: string, silent = false): Promise<string> {
     const { default: OpenAI } = await import('openai');
     const client = new OpenAI({ apiKey: this.config.apiKey, baseURL: this.config.baseUrl, timeout: 120_000 });
-    ui.startSpinner();
+    if (!silent) ui.startSpinner();
     let resp: any;
     try {
       resp = await client.chat.completions.create({
@@ -376,15 +379,15 @@ export class AgentRunner {
         temperature: this.config.temperature,
       });
     } finally {
-      ui.stopSpinner(resp?.usage);
+      if (!silent) ui.stopSpinner(resp?.usage);
     }
     return resp.choices[0].message.content ?? '';
   }
 
-  private async callAnthropic(system: string, userMsg: string): Promise<string> {
+  private async callAnthropic(system: string, userMsg: string, silent = false): Promise<string> {
     const { default: Anthropic } = await import('@anthropic-ai/sdk');
     const client = new Anthropic({ apiKey: this.config.apiKey, timeout: 120_000 });
-    ui.startSpinner();
+    if (!silent) ui.startSpinner();
     let resp: any;
     try {
       resp = await client.messages.create({
@@ -395,7 +398,7 @@ export class AgentRunner {
         messages: [{ role: 'user', content: userMsg }],
       });
     } finally {
-      ui.stopSpinner(resp?.usage ? { prompt_tokens: resp.usage.input_tokens, completion_tokens: resp.usage.output_tokens } : undefined);
+      if (!silent) ui.stopSpinner(resp?.usage ? { prompt_tokens: resp.usage.input_tokens, completion_tokens: resp.usage.output_tokens } : undefined);
     }
     return resp.content
       .filter((b: any) => b.type === 'text')
