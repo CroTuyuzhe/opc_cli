@@ -32,11 +32,14 @@ let _mainRl: readline.Interface | null = null;
 let _replIdle = false;
 
 function interruptPrompt(rl: readline.Interface, writeFn: () => void): void {
-  const partialInput = (rl as any).line ?? '';
+  const savedLine = (rl as any).line ?? '';
   readline.clearLine(process.stdout, 0);
   readline.cursorTo(process.stdout, 0);
   writeFn();
-  process.stdout.write('opc > ' + partialInput);
+  (rl as any).line = '';
+  (rl as any).cursor = 0;
+  rl.prompt();
+  if (savedLine) rl.write(savedLine);
 }
 
 class OPCApp {
