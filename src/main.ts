@@ -645,41 +645,43 @@ async function main() {
 
   rl.setPrompt('opc > ');
 
+  let _exiting = false;
+
   rl.on('line', async (input) => {
-    if (_processing) return;
+    if (_processing || _exiting) return;
     _replIdle = false;
     _processing = true;
     rl.pause();
 
-    const trimmed = input.trim();
-    if (!trimmed) {
-      ui.stopSpinner();
-      app.drainNotifications();
-      _replIdle = true;
-      _processing = false;
-      rl.prompt();
-      return;
-    }
+    try {
+      const trimmed = input.trim();
+      if (!trimmed) return;
 
-    readline.moveCursor(process.stdout, 0, -1);
-    readline.clearLine(process.stdout, 0);
-    console.log(chalk.bgHex('#1e3a5f').white(` > ${trimmed} `));
+      readline.moveCursor(process.stdout, 0, -1);
+      readline.clearLine(process.stdout, 0);
+      console.log(chalk.bgHex('#1e3a5f').white(` > ${trimmed} `));
 
-    if (trimmed.startsWith('/')) {
-      const shouldExit = app.handleSlash(trimmed);
-      if (shouldExit) {
-        rl.close();
-        return;
+      if (trimmed.startsWith('/')) {
+        const shouldExit = app.handleSlash(trimmed);
+        if (shouldExit) {
+          _exiting = true;
+          rl.close();
+          return;
+        }
+      } else {
+        await app.chat(trimmed);
       }
-    } else {
-      await app.chat(trimmed);
+    } catch (e: any) {
+      ui.printError(`Error: ${e.message}`);
+    } finally {
+      ui.stopSpinner();
+      if (!_exiting) {
+        app.drainNotifications();
+        _replIdle = true;
+        _processing = false;
+        rl.prompt();
+      }
     }
-
-    ui.stopSpinner();
-    app.drainNotifications();
-    _replIdle = true;
-    _processing = false;
-    rl.prompt();
   });
 
   rl.on('close', () => {
@@ -691,5 +693,15 @@ async function main() {
   _replIdle = true;
   rl.prompt();
 }
+
+process.on('uncaughtException', (err) => {
+  ui.stopSpinner();
+  ui.printError(`Fatal: ${err.message}`);
+});
+
+process.on('unhandledRejection', (reason: any) => {
+  ui.stopSpinner();
+  ui.printError(`Unhandled: ${reason?.message ?? reason}`);
+});
 
 main().catch(console.error);
