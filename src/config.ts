@@ -6,6 +6,7 @@ export interface Config {
   apiKey: string;
   baseUrl: string;
   defaultModel: string;
+  roleModels: Record<string, string>;
   teamRoot: string;
   maxTokens: number;
   temperature: number;
@@ -16,6 +17,7 @@ const DEFAULTS: Config = {
   apiKey: '',
   baseUrl: 'https://api.openai.com/v1',
   defaultModel: 'gpt-4o',
+  roleModels: {},
   teamRoot: '.',
   maxTokens: 8192,
   temperature: 0.7,
@@ -43,6 +45,7 @@ function loadJson(filePath: string): Partial<Config> {
       if (raw.team_root) mapped.teamRoot = raw.team_root;
       if (raw.max_tokens != null) mapped.maxTokens = Number(raw.max_tokens);
       if (raw.temperature != null) mapped.temperature = Number(raw.temperature);
+      if (raw.role_models && typeof raw.role_models === 'object') mapped.roleModels = raw.role_models;
       return mapped;
     }
   } catch {}
@@ -67,7 +70,12 @@ export function loadConfig(): Config {
   const localCfg = loadJson(path.join(process.cwd(), 'opc.json'));
   const env = envOverrides();
 
-  return { ...DEFAULTS, ...globalCfg, ...localCfg, ...env };
+  const config = { ...DEFAULTS, ...globalCfg, ...localCfg, ...env };
+  config.roleModels = {
+    ...globalCfg.roleModels,
+    ...localCfg.roleModels,
+  };
+  return config;
 }
 
 export function teamRootPath(config: Config): string {

@@ -106,6 +106,10 @@ export class AgentRunner {
     this.workspace = workspace;
   }
 
+  private modelFor(role: string): string {
+    return this.config.roleModels[role] || this.config.defaultModel;
+  }
+
   async run(role: string, taskId: string, silent = false): Promise<string> {
     const task = this.bus.claim(role, taskId);
     if (!task) return `No task ${taskId} in ${role} inbox`;
@@ -131,7 +135,7 @@ export class AgentRunner {
         resultText = result.text;
         writtenFiles = result.files;
       } else {
-        resultText = await this.callLlm(system, userMsg, silent);
+        resultText = await this.callLlm(system, userMsg, role, silent);
       }
     } catch (e: any) {
       const errorText = `ERROR: ${e.message}`;
@@ -250,7 +254,7 @@ export class AgentRunner {
       let resp: any;
       try {
         resp = await client.chat.completions.create({
-          model: this.config.defaultModel,
+          model: this.modelFor(role),
           messages,
           tools,
           max_tokens: this.config.maxTokens,
@@ -303,7 +307,7 @@ export class AgentRunner {
       let resp: any;
       try {
         resp = await client.messages.create({
-          model: this.config.defaultModel,
+          model: this.modelFor(role),
           max_tokens: this.config.maxTokens,
           temperature: this.config.temperature,
           system,
@@ -356,21 +360,21 @@ export class AgentRunner {
     }
   }
 
-  private async callLlm(system: string, userMsg: string, silent = false): Promise<string> {
+  private async callLlm(system: string, userMsg: string, role: string, silent = false): Promise<string> {
     if (this.config.provider === 'anthropic') {
-      return this.callAnthropic(system, userMsg, silent);
+      return this.callAnthropic(system, userMsg, role, silent);
     }
-    return this.callOpenAI(system, userMsg, silent);
+    return this.callOpenAI(system, userMsg, role, silent);
   }
 
-  private async callOpenAI(system: string, userMsg: string, silent = false): Promise<string> {
+  private async callOpenAI(system: string, userMsg: string, role: string, silent = false): Promise<string> {
     const { default: OpenAI } = await import('openai');
     const client = new OpenAI({ apiKey: this.config.apiKey, baseURL: this.config.baseUrl, timeout: 120_000 });
     if (!silent) ui.startSpinner();
     let resp: any;
     try {
       resp = await client.chat.completions.create({
-        model: this.config.defaultModel,
+        model: this.modelFor(role),
         messages: [
           { role: 'system', content: system },
           { role: 'user', content: userMsg },
@@ -384,14 +388,14 @@ export class AgentRunner {
     return resp.choices[0].message.content ?? '';
   }
 
-  private async callAnthropic(system: string, userMsg: string, silent = false): Promise<string> {
+  private async callAnthropic(system: string, userMsg: string, role: string, silent = false): Promise<string> {
     const { default: Anthropic } = await import('@anthropic-ai/sdk');
     const client = new Anthropic({ apiKey: this.config.apiKey, timeout: 120_000 });
     if (!silent) ui.startSpinner();
     let resp: any;
     try {
       resp = await client.messages.create({
-        model: this.config.defaultModel,
+        model: this.modelFor(role),
         max_tokens: this.config.maxTokens,
         temperature: this.config.temperature,
         system,
