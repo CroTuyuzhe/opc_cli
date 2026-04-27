@@ -52,6 +52,7 @@ export class LineEditor {
   private _active = false;
   private resolveFn: ((line: string | null) => void) | null = null;
   private boundOnData: ((data: string) => void) | null = null;
+  private pasting = false;
 
   constructor(inputPrompt: string, label = 'opc') {
     this.inputPrompt = inputPrompt;
@@ -92,6 +93,7 @@ export class LineEditor {
       this.resolveFn = resolve;
       this.drawFull();
       if (process.stdin.isTTY) process.stdin.setRawMode(true);
+      process.stdout.write('\x1b[?2004h');
       process.stdin.setEncoding('utf-8');
       process.stdin.resume();
       this.boundOnData = (data: string) => this.onData(data);
@@ -108,6 +110,8 @@ export class LineEditor {
 
   private cleanup(): void {
     this._active = false;
+    this.pasting = false;
+    process.stdout.write('\x1b[?2004l');
     if (this.boundOnData) {
       process.stdin.removeListener('data', this.boundOnData);
       this.boundOnData = null;
@@ -144,6 +148,23 @@ export class LineEditor {
       const cp = data.codePointAt(i)!;
       const ch = String.fromCodePoint(cp);
       i += ch.length;
+
+      // Bracketed paste: \x1b[200~ ... \x1b[201~
+      if (cp === 27 && data.startsWith('[200~', i)) {
+        i += 5; this.pasting = true; continue;
+      }
+      if (cp === 27 && data.startsWith('[201~', i)) {
+        i += 5; this.pasting = false; this.redraw(); continue;
+      }
+
+      if (this.pasting) {
+        if (cp === 13 || cp === 10) {
+          this.buf.splice(this.cursor, 0, ' '); this.cursor++;
+        } else if (cp >= 32) {
+          this.buf.splice(this.cursor, 0, ch); this.cursor++;
+        }
+        continue;
+      }
 
       if (cp === 27 && i < data.length && data[i] === '[') {
         i++;
