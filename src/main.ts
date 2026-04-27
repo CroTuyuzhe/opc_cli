@@ -753,10 +753,16 @@ async function main() {
 
         if (app.superAgent && !app.saInterrupt) {
           app.startEscListener();
+          let saErrors = 0;
           while (app.superAgent && !app.saInterrupt) {
             await app.waitForBackground();
             app.drainNotifications();
             if (app.saInterrupt) break;
+
+            if (app.brain.messageCount > 60) {
+              console.log(chalk.dim('  Context too long, trimming conversation history...'));
+              app.brain.trimContext(10);
+            }
 
             const prompt = [
               'Previous iteration complete. Review project state and all artifacts.',
@@ -765,7 +771,19 @@ async function main() {
               'Keep iterating until the project is production-ready.',
             ].join(' ');
 
-            await app.chat(prompt);
+            try {
+              await app.chat(prompt);
+              saErrors = 0;
+            } catch (e: any) {
+              saErrors++;
+              ui.printError(`  SuperAgent error: ${e.message}`);
+              if (saErrors >= 3) {
+                ui.printError('  Too many consecutive errors, stopping SuperAgent.');
+                break;
+              }
+              console.log(chalk.yellow('  Resetting context and retrying...'));
+              app.brain.reset();
+            }
           }
           app.stopEscListener();
           app.saInterrupt = false;

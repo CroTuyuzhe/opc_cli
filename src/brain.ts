@@ -90,6 +90,19 @@ export class Brain {
     return this.client;
   }
 
+  get messageCount(): number { return this.messages.length; }
+
+  trimContext(keepRecent = 10): void {
+    if (this.messages.length <= keepRecent) return;
+    const trimmed = this.messages.slice(-keepRecent);
+    if (trimmed[0]?.role === 'tool') {
+      const idx = trimmed.findIndex(m => m.role === 'user');
+      this.messages = idx > 0 ? trimmed.slice(idx) : trimmed;
+    } else {
+      this.messages = trimmed;
+    }
+  }
+
   async chat(userInput: string, toolExecutor?: ToolExecutor): Promise<string> {
     this.messages.push({ role: 'user', content: userInput });
     if (this.config.provider === 'anthropic') {
@@ -101,8 +114,19 @@ export class Brain {
   private cleanAssistantMsg(msg: any): any {
     const clean: any = { role: 'assistant', content: msg.content ?? null };
     if (msg.tool_calls?.length) clean.tool_calls = msg.tool_calls;
-    if (msg.reasoning_content) clean.reasoning_content = msg.reasoning_content;
     return clean;
+  }
+
+  private buildOpenAIMessages(): any[] {
+    return [
+      { role: 'system', content: this.systemPrompt },
+      ...this.messages.map(m => {
+        if (m.role !== 'assistant') return m;
+        const clean: any = { role: 'assistant', content: m.content ?? null };
+        if (m.tool_calls?.length) clean.tool_calls = m.tool_calls;
+        return clean;
+      }),
+    ];
   }
 
   private async chatOpenAI(toolExecutor?: ToolExecutor): Promise<string> {
@@ -113,7 +137,7 @@ export class Brain {
       try {
         resp = await client.chat.completions.create({
           model: this.config.defaultModel,
-          messages: [{ role: 'system', content: this.systemPrompt }, ...this.messages],
+          messages: this.buildOpenAIMessages(),
           tools: this.tools,
           max_tokens: this.config.maxTokens,
           temperature: this.config.temperature,
@@ -152,7 +176,6 @@ export class Brain {
       }
 
       if (this.interruptCheck?.()) {
-        this.messages.push({ role: 'assistant', content: 'Interrupted by user.' });
         return '[SuperAgent interrupted by user]';
       }
     }
@@ -231,7 +254,6 @@ export class Brain {
       apiMessages.push({ role: 'user', content: toolResults });
 
       if (this.interruptCheck?.()) {
-        this.messages.push({ role: 'assistant', content: 'Interrupted by user.' });
         return '[SuperAgent interrupted by user]';
       }
     }
