@@ -638,42 +638,55 @@ async function main() {
     }
   }, 2000);
 
-  const askQuestion = (): void => {
+  let _processing = false;
+
+  rl.setPrompt('opc > ');
+
+  rl.on('line', async (input) => {
+    if (_processing) return;
+    _replIdle = false;
+    _processing = true;
+    rl.pause();
+
+    const trimmed = input.trim();
+    if (!trimmed) {
+      ui.stopSpinner();
+      app.drainNotifications();
+      _replIdle = true;
+      _processing = false;
+      rl.prompt();
+      return;
+    }
+
+    readline.moveCursor(process.stdout, 0, -1);
+    readline.clearLine(process.stdout, 0);
+    console.log(chalk.bgHex('#1e3a5f').white(` > ${trimmed} `));
+
+    if (trimmed.startsWith('/')) {
+      const shouldExit = app.handleSlash(trimmed);
+      if (shouldExit) {
+        rl.close();
+        return;
+      }
+    } else {
+      await app.chat(trimmed);
+    }
+
     ui.stopSpinner();
     app.drainNotifications();
     _replIdle = true;
-    rl.question('opc > ', async (input) => {
-      _replIdle = false;
-      const trimmed = input.trim();
-      if (!trimmed) {
-        askQuestion();
-        return;
-      }
-
-      readline.moveCursor(process.stdout, 0, -1);
-      readline.clearLine(process.stdout, 0);
-      console.log(chalk.bgHex('#1e3a5f').white(` > ${trimmed} `));
-
-      if (trimmed.startsWith('/')) {
-        const shouldExit = app.handleSlash(trimmed);
-        if (shouldExit) {
-          rl.close();
-          return;
-        }
-      } else {
-        await app.chat(trimmed);
-      }
-
-      askQuestion();
-    });
-  };
+    _processing = false;
+    rl.prompt();
+  });
 
   rl.on('close', () => {
     console.log('\nBye.');
     process.exit(0);
   });
 
-  askQuestion();
+  app.drainNotifications();
+  _replIdle = true;
+  rl.prompt();
 }
 
 main().catch(console.error);

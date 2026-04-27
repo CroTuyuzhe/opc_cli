@@ -235,7 +235,7 @@ export class AgentRunner {
     toolNames: string[]
   ): Promise<{ text: string; files: string[] }> {
     const { default: OpenAI } = await import('openai');
-    const client = new OpenAI({ apiKey: this.config.apiKey, baseURL: this.config.baseUrl });
+    const client = new OpenAI({ apiKey: this.config.apiKey, baseURL: this.config.baseUrl, timeout: 120_000 });
     const tools = toOpenAITools(toolNames);
     const messages: any[] = [
       { role: 'system', content: system },
@@ -290,7 +290,7 @@ export class AgentRunner {
     toolNames: string[]
   ): Promise<{ text: string; files: string[] }> {
     const { default: Anthropic } = await import('@anthropic-ai/sdk');
-    const client = new Anthropic({ apiKey: this.config.apiKey });
+    const client = new Anthropic({ apiKey: this.config.apiKey, timeout: 120_000 });
     const tools = toAnthropicAgentTools(toolNames);
     const messages: any[] = [{ role: 'user', content: userMsg }];
     const writtenFiles: string[] = [];
@@ -362,7 +362,7 @@ export class AgentRunner {
 
   private async callOpenAI(system: string, userMsg: string): Promise<string> {
     const { default: OpenAI } = await import('openai');
-    const client = new OpenAI({ apiKey: this.config.apiKey, baseURL: this.config.baseUrl });
+    const client = new OpenAI({ apiKey: this.config.apiKey, baseURL: this.config.baseUrl, timeout: 120_000 });
     ui.startSpinner();
     let resp: any;
     try {
@@ -383,7 +383,7 @@ export class AgentRunner {
 
   private async callAnthropic(system: string, userMsg: string): Promise<string> {
     const { default: Anthropic } = await import('@anthropic-ai/sdk');
-    const client = new Anthropic({ apiKey: this.config.apiKey });
+    const client = new Anthropic({ apiKey: this.config.apiKey, timeout: 120_000 });
     ui.startSpinner();
     let resp: any;
     try {

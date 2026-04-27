@@ -77,12 +77,13 @@ export class Brain {
     if (this.client !== null) return this.client;
     if (this.config.provider === 'anthropic') {
       const { default: Anthropic } = await import('@anthropic-ai/sdk');
-      this.client = new Anthropic({ apiKey: this.config.apiKey });
+      this.client = new Anthropic({ apiKey: this.config.apiKey, timeout: 120_000 });
     } else {
       const { default: OpenAI } = await import('openai');
       this.client = new OpenAI({
         apiKey: this.config.apiKey,
         baseURL: this.config.baseUrl,
+        timeout: 120_000,
       });
     }
     return this.client;
