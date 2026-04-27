@@ -30,6 +30,7 @@ interface Message {
   content: any;
   tool_calls?: any[];
   tool_call_id?: string;
+  reasoning_content?: string;
 }
 
 export class Brain {
@@ -114,19 +115,8 @@ export class Brain {
   private cleanAssistantMsg(msg: any): any {
     const clean: any = { role: 'assistant', content: msg.content ?? null };
     if (msg.tool_calls?.length) clean.tool_calls = msg.tool_calls;
+    if (msg.reasoning_content) clean.reasoning_content = msg.reasoning_content;
     return clean;
-  }
-
-  private buildOpenAIMessages(): any[] {
-    return [
-      { role: 'system', content: this.systemPrompt },
-      ...this.messages.map(m => {
-        if (m.role !== 'assistant') return m;
-        const clean: any = { role: 'assistant', content: m.content ?? null };
-        if (m.tool_calls?.length) clean.tool_calls = m.tool_calls;
-        return clean;
-      }),
-    ];
   }
 
   private async chatOpenAI(toolExecutor?: ToolExecutor): Promise<string> {
@@ -137,7 +127,7 @@ export class Brain {
       try {
         resp = await client.chat.completions.create({
           model: this.config.defaultModel,
-          messages: this.buildOpenAIMessages(),
+          messages: [{ role: 'system', content: this.systemPrompt }, ...this.messages],
           tools: this.tools,
           max_tokens: this.config.maxTokens,
           temperature: this.config.temperature,
