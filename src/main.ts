@@ -615,7 +615,7 @@ async function main() {
   const historyDir = path.join(process.env.HOME ?? '~', '.opc');
   fs.ensureDirSync(historyDir);
 
-  const editor = new ui.LineEditor('opc > ');
+  const editor = new ui.LineEditor(chalk.cyan('❯') + ' ', 'opc');
   _editor = editor;
 
   setInterval(() => {
@@ -638,10 +638,6 @@ async function main() {
 
     const trimmed = input.trim();
     if (!trimmed) { _replIdle = true; continue; }
-
-    readline.moveCursor(process.stdout, 0, -1);
-    readline.clearLine(process.stdout, 0);
-    console.log(chalk.bgHex('#1e3a5f').white(` > ${trimmed} `));
 
     try {
       if (trimmed.startsWith('/')) {

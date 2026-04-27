@@ -33,28 +33,56 @@ function charDisplayWidth(ch: string): number {
   return isWideChar(cp) ? 2 : 1;
 }
 
+const ANSI_RE = /\x1b\[[0-9;]*m/g;
+
 export function stringDisplayWidth(str: string): number {
+  const clean = str.replace(ANSI_RE, '');
   let w = 0;
-  for (const ch of str) w += charDisplayWidth(ch);
+  for (const ch of clean) w += charDisplayWidth(ch);
   return w;
 }
 
 // === Custom Line Editor (replaces readline for REPL input) ===
 
 export class LineEditor {
-  private prompt: string;
+  private inputPrompt: string;
+  private label: string;
   private buf: string[] = [];
   private cursor = 0;
   private _active = false;
   private resolveFn: ((line: string | null) => void) | null = null;
   private boundOnData: ((data: string) => void) | null = null;
 
-  constructor(prompt: string) {
-    this.prompt = prompt;
+  constructor(inputPrompt: string, label = 'opc') {
+    this.inputPrompt = inputPrompt;
+    this.label = label;
   }
 
-  setPrompt(p: string) { this.prompt = p; }
+  setLabel(l: string) { this.label = l; }
   isActive(): boolean { return this._active; }
+
+  private getCols(): number { return process.stdout.columns || 80; }
+
+  private buildTopLine(): string {
+    const cols = this.getCols();
+    const suffix = ' ' + this.label + ' ──';
+    const lineLen = Math.max(0, cols - suffix.length);
+    return chalk.dim('─'.repeat(lineLen) + suffix);
+  }
+
+  private buildBottomLine(): string {
+    return chalk.dim('─'.repeat(this.getCols()));
+  }
+
+  private drawFull(): void {
+    process.stdout.write(this.buildTopLine() + '\n');
+    const text = this.buf.join('');
+    process.stdout.write(this.inputPrompt + text + '\n');
+    process.stdout.write(this.buildBottomLine());
+    process.stdout.write('\x1b[A');
+    const col = stringDisplayWidth(this.inputPrompt) + this.widthSlice(0, this.cursor);
+    readline.cursorTo(process.stdout, col);
+  }
 
   readLine(): Promise<string | null> {
     return new Promise((resolve) => {
@@ -62,7 +90,7 @@ export class LineEditor {
       this.cursor = 0;
       this._active = true;
       this.resolveFn = resolve;
-      process.stdout.write(this.prompt);
+      this.drawFull();
       if (process.stdin.isTTY) process.stdin.setRawMode(true);
       process.stdin.setEncoding('utf-8');
       process.stdin.resume();
@@ -73,10 +101,9 @@ export class LineEditor {
 
   interrupt(writeFn: () => void): void {
     if (!this._active) return;
-    readline.cursorTo(process.stdout, 0);
-    readline.clearLine(process.stdout, 0);
+    process.stdout.write('\x1b[A\x1b[G\x1b[J');
     writeFn();
-    this.redraw();
+    this.drawFull();
   }
 
   private cleanup(): void {
@@ -89,10 +116,26 @@ export class LineEditor {
     process.stdin.pause();
   }
 
-  private finish(result: string | null): void {
+  private finishSubmit(result: string): void {
     this.cleanup();
-    process.stdout.write('\n');
+    process.stdout.write('\x1b[G\x1b[J');
+    process.stdout.write(this.inputPrompt + this.buf.join('') + '\n');
+    process.stdout.write(this.buildBottomLine() + '\n');
     this.resolveFn?.(result);
+    this.resolveFn = null;
+  }
+
+  private finishCancel(): void {
+    this.cleanup();
+    process.stdout.write('\x1b[A\x1b[G\x1b[J');
+    this.resolveFn?.('');
+    this.resolveFn = null;
+  }
+
+  private finishExit(): void {
+    this.cleanup();
+    process.stdout.write('\x1b[A\x1b[G\x1b[J');
+    this.resolveFn?.(null);
     this.resolveFn = null;
   }
 
@@ -119,10 +162,10 @@ export class LineEditor {
       }
       if (cp === 27) continue;
 
-      if (cp === 3) { this.finish(''); return; }
-      if (cp === 4 && this.buf.length === 0) { this.finish(null); return; }
+      if (cp === 3) { this.finishCancel(); return; }
+      if (cp === 4 && this.buf.length === 0) { this.finishExit(); return; }
       if (cp === 4) continue;
-      if (cp === 13 || cp === 10) { this.finish(this.buf.join('')); return; }
+      if (cp === 13 || cp === 10) { this.finishSubmit(this.buf.join('')); return; }
 
       if (cp === 127 || cp === 8) {
         if (this.cursor > 0) { this.buf.splice(this.cursor - 1, 1); this.cursor--; this.redraw(); }
@@ -142,10 +185,11 @@ export class LineEditor {
   }
 
   private redraw(): void {
-    readline.cursorTo(process.stdout, 0);
-    readline.clearLine(process.stdout, 0);
-    process.stdout.write(this.prompt + this.buf.join(''));
-    const col = stringDisplayWidth(this.prompt) + this.widthSlice(0, this.cursor);
+    process.stdout.write('\x1b[G\x1b[J');
+    const text = this.buf.join('');
+    process.stdout.write(this.inputPrompt + text + '\n' + this.buildBottomLine());
+    process.stdout.write('\x1b[A');
+    const col = stringDisplayWidth(this.inputPrompt) + this.widthSlice(0, this.cursor);
     readline.cursorTo(process.stdout, col);
   }
 
