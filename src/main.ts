@@ -39,6 +39,9 @@ class OPCApp {
   runner!: AgentRunner;
   skills!: SkillLoader;
   compact = false;
+  superAgent = false;
+  saInterrupt = false;
+  private escHandler: ((data: string) => void) | null = null;
   private bashAutoApprove = false;
   private bgPromises: Map<string, Promise<DoneTask>> = new Map();
   private doneQueue: DoneTask[] = [];
@@ -74,6 +77,51 @@ class OPCApp {
 
   private checkIntervention(): string {
     return this.identity.readIntervention();
+  }
+
+  async askBoss(question: string, options?: Array<{ label: string; value: string }>): Promise<string> {
+    let userMsg = `Question: ${question}`;
+    if (options && options.length > 0) {
+      userMsg += `\n\nOptions:\n${options.map((o, i) => `${i + 1}. ${o.label} (value: ${o.value})`).join('\n')}`;
+      userMsg += `\n\nRespond with ONLY the value of your chosen option, nothing else.`;
+    }
+
+    const system = 'You are the project boss. Make decisive choices that maximize project quality and completeness. Be brief and direct.';
+
+    try {
+      if (this.config.provider === 'anthropic') {
+        const { default: Anthropic } = await import('@anthropic-ai/sdk');
+        const client = new Anthropic({ apiKey: this.config.apiKey, timeout: 60_000 });
+        const resp = await client.messages.create({
+          model: this.config.defaultModel,
+          max_tokens: 256,
+          temperature: 0.3,
+          system,
+          messages: [{ role: 'user', content: userMsg }],
+        });
+        const answer = resp.content.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('').trim();
+        ui.printBossDecision(question, answer);
+        return answer;
+      } else {
+        const { default: OpenAI } = await import('openai');
+        const client = new OpenAI({ apiKey: this.config.apiKey, baseURL: this.config.baseUrl, timeout: 60_000 });
+        const resp = await client.chat.completions.create({
+          model: this.config.defaultModel,
+          messages: [
+            { role: 'system', content: system },
+            { role: 'user', content: userMsg },
+          ],
+          max_tokens: 256,
+          temperature: 0.3,
+        });
+        const answer = (resp.choices[0].message.content ?? '').trim();
+        ui.printBossDecision(question, answer);
+        return answer;
+      }
+    } catch (e: any) {
+      ui.printError(`Boss decision failed: ${e.message}`);
+      return options?.[0]?.value ?? '(auto-decided)';
+    }
   }
 
   async executeTool(name: string, args: Record<string, any>): Promise<string> {
@@ -204,6 +252,9 @@ class OPCApp {
     if (name === 'ask_user') {
       const question = args.question ?? '';
       const options = args.options;
+      if (this.superAgent) {
+        return this.askBoss(question, options);
+      }
       ui.printDeepthinkQuestion('brain', question);
       if (options && Array.isArray(options)) {
         return ui.promptUserSelect(options);
@@ -212,7 +263,11 @@ class OPCApp {
     }
 
     if (name === 'run_bash') {
-      return this.executeBash(args.command ?? '', args.description ?? '');
+      const wasListening = !!this.escHandler;
+      if (wasListening) this.stopEscListener();
+      const result = await this.executeBash(args.command ?? '', args.description ?? '');
+      if (wasListening && this.superAgent) this.startEscListener();
+      return result;
     }
 
     if (name.startsWith('skill_')) {
@@ -260,6 +315,38 @@ class OPCApp {
 
   hasPendingNotifications(): boolean {
     return this.doneQueue.length > 0;
+  }
+
+  async waitForBackground(): Promise<void> {
+    while (this.bgPromises.size > 0) {
+      await Promise.all([...this.bgPromises.values()]);
+    }
+  }
+
+  startEscListener(): void {
+    if (this.escHandler) return;
+    if (!process.stdin.isTTY) return;
+    process.stdin.setRawMode(true);
+    process.stdin.resume();
+    process.stdin.setEncoding('utf-8');
+    this.escHandler = (data: string) => {
+      if (data.charCodeAt(0) === 27 && data.length === 1) {
+        this.saInterrupt = true;
+        console.log(chalk.yellow('\n  ⏸ ESC detected — interrupting SuperAgent after current step...'));
+      }
+    };
+    process.stdin.on('data', this.escHandler);
+  }
+
+  stopEscListener(): void {
+    if (this.escHandler) {
+      process.stdin.removeListener('data', this.escHandler);
+      this.escHandler = null;
+    }
+    if (process.stdin.isTTY) {
+      try { process.stdin.setRawMode(false); } catch {}
+    }
+    try { process.stdin.pause(); } catch {}
   }
 
   private loadRegistry(): any[] {
@@ -368,6 +455,24 @@ class OPCApp {
       this.handleTaskCmd(arg);
     } else if (command === '/skill') {
       this.handleSkillCmd(arg);
+    } else if (command === '/superagent') {
+      const sub = arg.toLowerCase();
+      if (sub === 'on') {
+        this.superAgent = true;
+        this.saInterrupt = false;
+        this.runner.askOverride = (q, opts) => this.askBoss(q, opts);
+        this.brain.interruptCheck = () => this.saInterrupt;
+        ui.printSuperAgentStatus(true);
+      } else if (sub === 'off') {
+        this.superAgent = false;
+        this.saInterrupt = false;
+        this.runner.askOverride = null;
+        this.brain.interruptCheck = null;
+        this.stopEscListener();
+        ui.printSuperAgentStatus(false);
+      } else {
+        console.log(`  SuperAgent: ${this.superAgent ? chalk.green('ON') : chalk.dim('OFF')}`);
+      }
     } else if (command === '/uninstall') {
       this.uninstall();
       return true;
@@ -645,6 +750,27 @@ async function main() {
         if (shouldExit) break;
       } else {
         await app.chat(trimmed);
+
+        if (app.superAgent && !app.saInterrupt) {
+          app.startEscListener();
+          while (app.superAgent && !app.saInterrupt) {
+            await app.waitForBackground();
+            app.drainNotifications();
+            if (app.saInterrupt) break;
+
+            const prompt = [
+              'Previous iteration complete. Review project state and all artifacts.',
+              'Identify the most impactful improvement: competitive analysis, UX polish, missing features, edge cases, code quality, or testing.',
+              'Dispatch tasks to PM for new requirements research, then execute the full pipeline.',
+              'Keep iterating until the project is production-ready.',
+            ].join(' ');
+
+            await app.chat(prompt);
+          }
+          app.stopEscListener();
+          app.saInterrupt = false;
+          console.log(chalk.green('  SuperAgent loop stopped. Back to normal REPL.'));
+        }
       }
     } catch (e: any) {
       ui.printError(`Error: ${e.message}`);

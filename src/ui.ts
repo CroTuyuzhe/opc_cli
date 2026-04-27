@@ -385,6 +385,7 @@ export function printHelp() {
     ['/task', 'List all tasks (active + recent)'],
     ['/task <id>', 'View task details'],
     ['/task <id> close', 'Close and archive a task'],
+    ['/superagent on|off', 'Toggle SuperAgent autonomous mode'],
     ['/compact', 'Toggle compact output'],
     ['/uninstall', 'Remove OPC from system'],
     ['/help', 'This help'],
@@ -523,6 +524,25 @@ export async function promptUserSelect(options: Array<{ label: string; value: st
     _promptActive = false;
     return '(skipped)';
   }
+}
+
+export function printSuperAgentStatus(on: boolean) {
+  if (on) {
+    console.log(boxen(
+      chalk.bold.green('SuperAgent: ON') +
+      '\n\nBrain will autonomously iterate the project.' +
+      '\nask_user → ask_boss (LLM auto-decides)' +
+      '\nPress ESC to interrupt at any time.',
+      { padding: 1, borderColor: 'green', title: 'SuperAgent', titleAlignment: 'left' }
+    ));
+  } else {
+    console.log(`  ${chalk.dim('SuperAgent: OFF — back to normal mode')}`);
+  }
+}
+
+export function printBossDecision(question: string, answer: string) {
+  console.log(`  ${chalk.magenta('🤖 Boss:')} ${chalk.dim(question)}`);
+  console.log(`  ${chalk.magenta('→')} ${answer}`);
 }
 
 export async function promptBashApproval(command: string, description = ''): Promise<'yes' | 'always' | 'no'> {

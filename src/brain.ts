@@ -41,6 +41,7 @@ export class Brain {
   private messages: Message[] = [];
   private client: any = null;
   private systemPromptCache: string | null = null;
+  interruptCheck: (() => boolean) | null = null;
 
   constructor(
     config: Config,
@@ -149,6 +150,11 @@ export class Brain {
           content: typeof result === 'string' ? result : JSON.stringify(result),
         });
       }
+
+      if (this.interruptCheck?.()) {
+        this.messages.push({ role: 'assistant', content: 'Interrupted by user.' });
+        return '[SuperAgent interrupted by user]';
+      }
     }
   }
 
@@ -223,6 +229,11 @@ export class Brain {
 
       apiMessages.push({ role: 'assistant', content: assistantContent });
       apiMessages.push({ role: 'user', content: toolResults });
+
+      if (this.interruptCheck?.()) {
+        this.messages.push({ role: 'assistant', content: 'Interrupted by user.' });
+        return '[SuperAgent interrupted by user]';
+      }
     }
   }
 
