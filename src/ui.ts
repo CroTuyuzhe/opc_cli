@@ -79,6 +79,7 @@ export class LineEditor {
   private pagerOffset = 0;
   private pagerInputRow = 0;
   private awaitingCursorReport = false;
+  private prevCursorLine = 0;
 
   constructor(inputPrompt: string, label = 'opc') {
     this.inputPrompt = inputPrompt;
@@ -106,9 +107,15 @@ export class LineEditor {
     const text = this.buf.join('');
     process.stdout.write(this.inputPrompt + text + '\n');
     process.stdout.write(this.buildBottomLine());
-    process.stdout.write('\x1b[A');
+    const cols = this.getCols();
     const col = stringDisplayWidth(this.inputPrompt) + this.widthSlice(0, this.cursor);
-    readline.cursorTo(process.stdout, col);
+    const inputWidth = stringDisplayWidth(this.inputPrompt + text);
+    const totalLines = cols > 0 ? Math.max(1, Math.ceil(inputWidth / cols)) : 1;
+    const cursorLine = cols > 0 ? Math.floor(col / cols) : 0;
+    const up = totalLines - cursorLine;
+    if (up > 0) process.stdout.write(`\x1b[${up}A`);
+    readline.cursorTo(process.stdout, cols > 0 ? col % cols : col);
+    this.prevCursorLine = cursorLine;
   }
 
   readLine(): Promise<string | null> {
@@ -129,7 +136,8 @@ export class LineEditor {
 
   interrupt(writeFn: () => void): void {
     if (!this._active) return;
-    process.stdout.write('\x1b[A\x1b[G\x1b[J');
+    const up = 1 + this.prevCursorLine;
+    process.stdout.write(`\x1b[${up}A\x1b[G\x1b[J`);
     writeFn();
     this.drawFull();
   }
@@ -149,9 +157,11 @@ export class LineEditor {
   private finishSubmit(result: string): void {
     this.resetCompletions();
     this.cleanup();
+    if (this.prevCursorLine > 0) process.stdout.write(`\x1b[${this.prevCursorLine}A`);
     process.stdout.write('\x1b[G\x1b[J');
     process.stdout.write(this.inputPrompt + this.buf.join('') + '\n');
     process.stdout.write(this.buildBottomLine() + '\n');
+    this.prevCursorLine = 0;
     this.resolveFn?.(result);
     this.resolveFn = null;
   }
@@ -159,7 +169,9 @@ export class LineEditor {
   private finishCancel(): void {
     this.resetCompletions();
     this.cleanup();
-    process.stdout.write('\x1b[A\x1b[G\x1b[J');
+    const up = 1 + this.prevCursorLine;
+    process.stdout.write(`\x1b[${up}A\x1b[G\x1b[J`);
+    this.prevCursorLine = 0;
     this.resolveFn?.('');
     this.resolveFn = null;
   }
@@ -167,7 +179,9 @@ export class LineEditor {
   private finishExit(): void {
     this.resetCompletions();
     this.cleanup();
-    process.stdout.write('\x1b[A\x1b[G\x1b[J');
+    const up = 1 + this.prevCursorLine;
+    process.stdout.write(`\x1b[${up}A\x1b[G\x1b[J`);
+    this.prevCursorLine = 0;
     this.resolveFn?.(null);
     this.resolveFn = null;
   }
@@ -288,6 +302,7 @@ export class LineEditor {
 
   private redraw(): void {
     this.updateCompletions();
+    if (this.prevCursorLine > 0) process.stdout.write(`\x1b[${this.prevCursorLine}A`);
     process.stdout.write('\x1b[G\x1b[J');
     const text = this.buf.join('');
     process.stdout.write(this.inputPrompt + text + '\n' + this.buildBottomLine());
@@ -305,11 +320,16 @@ export class LineEditor {
       }
     }
 
+    const cols = this.getCols();
     const menuLines = this.completionActive ? this.completions.length : 0;
-    const up = 1 + menuLines;
-    process.stdout.write(`\x1b[${up}A`);
     const col = stringDisplayWidth(this.inputPrompt) + this.widthSlice(0, this.cursor);
-    readline.cursorTo(process.stdout, col);
+    const inputWidth = stringDisplayWidth(this.inputPrompt + text);
+    const totalLines = cols > 0 ? Math.max(1, Math.ceil(inputWidth / cols)) : 1;
+    const cursorLine = cols > 0 ? Math.floor(col / cols) : 0;
+    const up = totalLines + menuLines - cursorLine;
+    if (up > 0) process.stdout.write(`\x1b[${up}A`);
+    readline.cursorTo(process.stdout, cols > 0 ? col % cols : col);
+    this.prevCursorLine = cursorLine;
   }
 
   private enterPager(): void {
@@ -341,6 +361,7 @@ export class LineEditor {
     if (this.pagerInputRow > 0) {
       process.stdout.write(`\x1b[${this.pagerInputRow};1H`);
     }
+    this.prevCursorLine = 0;
     this.redraw();
   }
 
