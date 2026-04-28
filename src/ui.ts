@@ -322,8 +322,8 @@ export class LineEditor {
     this.inPager = false;
     this.pagerLines = [];
     process.stdout.write('\x1b[?1049l');
-    process.stdout.write('\x1b[A\x1b[G\x1b[J');
-    this.drawFull();
+    process.stdout.write('\x1b[A');
+    this.redraw();
   }
 
   private widthSlice(start: number, end: number): number {
