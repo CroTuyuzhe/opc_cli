@@ -77,6 +77,8 @@ export class LineEditor {
   private inPager = false;
   private pagerLines: string[] = [];
   private pagerOffset = 0;
+  private pagerInputRow = 0;
+  private awaitingCursorReport = false;
 
   constructor(inputPrompt: string, label = 'opc') {
     this.inputPrompt = inputPrompt;
@@ -171,6 +173,20 @@ export class LineEditor {
   }
 
   private onData(data: string): void {
+    if (this.awaitingCursorReport) {
+      const match = data.match(/\x1b\[(\d+);(\d+)R/);
+      if (match) {
+        this.pagerInputRow = parseInt(match[1]);
+        this.awaitingCursorReport = false;
+        process.stdout.write('\x1b[?1049h');
+        this.renderPager();
+        data = data.replace(/\x1b\[\d+;\d+R/, '');
+        if (!data) return;
+      } else {
+        return;
+      }
+    }
+
     for (let i = 0; i < data.length; ) {
       const cp = data.codePointAt(i)!;
       const ch = String.fromCodePoint(cp);
@@ -301,8 +317,8 @@ export class LineEditor {
     this.inPager = true;
     this.pagerLines = _lastCollapsed.split('\n');
     this.pagerOffset = 0;
-    process.stdout.write('\x1b[s\x1b[?1049h');
-    this.renderPager();
+    this.awaitingCursorReport = true;
+    process.stdout.write('\x1b[6n');
   }
 
   private renderPager(): void {
@@ -321,7 +337,10 @@ export class LineEditor {
   private exitPager(): void {
     this.inPager = false;
     this.pagerLines = [];
-    process.stdout.write('\x1b[?1049l\x1b[u');
+    process.stdout.write('\x1b[?1049l');
+    if (this.pagerInputRow > 0) {
+      process.stdout.write(`\x1b[${this.pagerInputRow};1H`);
+    }
     this.redraw();
   }
 
