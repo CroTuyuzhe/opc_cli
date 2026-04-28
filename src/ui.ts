@@ -301,7 +301,7 @@ export class LineEditor {
     this.inPager = true;
     this.pagerLines = _lastCollapsed.split('\n');
     this.pagerOffset = 0;
-    process.stdout.write('\x1b[?1049h');
+    process.stdout.write('\x1b[s\x1b[?1049h');
     this.renderPager();
   }
 
@@ -321,8 +321,7 @@ export class LineEditor {
   private exitPager(): void {
     this.inPager = false;
     this.pagerLines = [];
-    process.stdout.write('\x1b[?1049l');
-    process.stdout.write('\x1b[A');
+    process.stdout.write('\x1b[?1049l\x1b[u');
     this.redraw();
   }
 
