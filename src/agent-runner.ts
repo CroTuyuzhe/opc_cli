@@ -98,6 +98,7 @@ export class AgentRunner {
   private workspace: string;
   projectId: string | null = null;
   codeRoot: string | null = null;
+  askOverride: ((question: string, options?: Array<{ label: string; value: string }>) => Promise<string>) | null = null;
 
   constructor(config: Config, bus: Bus, identity: IdentityEngine, workspace: string) {
     this.config = config;
@@ -210,6 +211,9 @@ export class AgentRunner {
     if (name === 'ask_user') {
       const question = args.question ?? '';
       const options = args.options;
+      if (this.askOverride) {
+        return this.askOverride(question, options);
+      }
       ui.printDeepthinkQuestion(role, question);
       if (options && Array.isArray(options)) {
         return ui.promptUserSelect(options);

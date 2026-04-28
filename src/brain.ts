@@ -30,6 +30,7 @@ interface Message {
   content: any;
   tool_calls?: any[];
   tool_call_id?: string;
+  reasoning_content?: string;
 }
 
 export class Brain {
@@ -41,6 +42,7 @@ export class Brain {
   private messages: Message[] = [];
   private client: any = null;
   private systemPromptCache: string | null = null;
+  interruptCheck: (() => boolean) | null = null;
 
   constructor(
     config: Config,
@@ -87,6 +89,19 @@ export class Brain {
       });
     }
     return this.client;
+  }
+
+  get messageCount(): number { return this.messages.length; }
+
+  trimContext(keepRecent = 10): void {
+    if (this.messages.length <= keepRecent) return;
+    const trimmed = this.messages.slice(-keepRecent);
+    if (trimmed[0]?.role === 'tool') {
+      const idx = trimmed.findIndex(m => m.role === 'user');
+      this.messages = idx > 0 ? trimmed.slice(idx) : trimmed;
+    } else {
+      this.messages = trimmed;
+    }
   }
 
   async chat(userInput: string, toolExecutor?: ToolExecutor): Promise<string> {
@@ -148,6 +163,10 @@ export class Brain {
           tool_call_id: tc.id,
           content: typeof result === 'string' ? result : JSON.stringify(result),
         });
+      }
+
+      if (this.interruptCheck?.()) {
+        return '[SuperAgent interrupted by user]';
       }
     }
   }
@@ -223,6 +242,10 @@ export class Brain {
 
       apiMessages.push({ role: 'assistant', content: assistantContent });
       apiMessages.push({ role: 'user', content: toolResults });
+
+      if (this.interruptCheck?.()) {
+        return '[SuperAgent interrupted by user]';
+      }
     }
   }
 

@@ -42,6 +42,24 @@ export function stringDisplayWidth(str: string): number {
   return w;
 }
 
+// === Slash command registry (shared by help + autocomplete) ===
+
+export const SLASH_COMMANDS: Array<{ cmd: string; desc: string }> = [
+  { cmd: '/status', desc: 'Show agent status' },
+  { cmd: '/tasks', desc: 'Show task queue' },
+  { cmd: '/inbox', desc: 'View role inbox' },
+  { cmd: '/dispatch', desc: 'Manually dispatch a task' },
+  { cmd: '/skills', desc: 'List available tools' },
+  { cmd: '/skill', desc: 'Manage installed skills' },
+  { cmd: '/new', desc: 'Start fresh conversation' },
+  { cmd: '/task', desc: 'List or manage tasks' },
+  { cmd: '/superagent', desc: 'Toggle SuperAgent mode' },
+  { cmd: '/compact', desc: 'Toggle compact output' },
+  { cmd: '/uninstall', desc: 'Remove OPC from system' },
+  { cmd: '/help', desc: 'Show help' },
+  { cmd: '/exit', desc: 'Quit' },
+];
+
 // === Custom Line Editor (replaces readline for REPL input) ===
 
 export class LineEditor {
@@ -53,6 +71,14 @@ export class LineEditor {
   private resolveFn: ((line: string | null) => void) | null = null;
   private boundOnData: ((data: string) => void) | null = null;
   private pasting = false;
+  private completions: Array<{ cmd: string; desc: string }> = [];
+  private completionIdx = -1;
+  private completionActive = false;
+  private inPager = false;
+  private pagerLines: string[] = [];
+  private pagerOffset = 0;
+  private pagerInputRow = 0;
+  private awaitingCursorReport = false;
 
   constructor(inputPrompt: string, label = 'opc') {
     this.inputPrompt = inputPrompt;
@@ -121,6 +147,7 @@ export class LineEditor {
   }
 
   private finishSubmit(result: string): void {
+    this.resetCompletions();
     this.cleanup();
     process.stdout.write('\x1b[G\x1b[J');
     process.stdout.write(this.inputPrompt + this.buf.join('') + '\n');
@@ -130,6 +157,7 @@ export class LineEditor {
   }
 
   private finishCancel(): void {
+    this.resetCompletions();
     this.cleanup();
     process.stdout.write('\x1b[A\x1b[G\x1b[J');
     this.resolveFn?.('');
@@ -137,6 +165,7 @@ export class LineEditor {
   }
 
   private finishExit(): void {
+    this.resetCompletions();
     this.cleanup();
     process.stdout.write('\x1b[A\x1b[G\x1b[J');
     this.resolveFn?.(null);
@@ -144,10 +173,42 @@ export class LineEditor {
   }
 
   private onData(data: string): void {
+    if (this.awaitingCursorReport) {
+      const match = data.match(/\x1b\[(\d+);(\d+)R/);
+      if (match) {
+        this.pagerInputRow = parseInt(match[1]);
+        this.awaitingCursorReport = false;
+        process.stdout.write('\x1b[?1049h');
+        this.renderPager();
+        data = data.replace(/\x1b\[\d+;\d+R/, '');
+        if (!data) return;
+      } else {
+        return;
+      }
+    }
+
     for (let i = 0; i < data.length; ) {
       const cp = data.codePointAt(i)!;
       const ch = String.fromCodePoint(cp);
       i += ch.length;
+
+      if (this.inPager) {
+        if (cp === 15 || cp === 3) { this.exitPager(); continue; }
+        if (cp === 27 && i < data.length && data[i] === '[') {
+          i++;
+          if (i < data.length) {
+            const code = data[i]; i++;
+            const rows = process.stdout.rows || 24;
+            const viewable = rows - 2;
+            const maxOffset = Math.max(0, this.pagerLines.length - viewable);
+            if (code === 'A' && this.pagerOffset > 0) { this.pagerOffset--; this.renderPager(); }
+            else if (code === 'B' && this.pagerOffset < maxOffset) { this.pagerOffset++; this.renderPager(); }
+          }
+        } else if (cp === 27) {
+          this.exitPager();
+        }
+        continue;
+      }
 
       // Bracketed paste: \x1b[200~ ... \x1b[201~
       if (cp === 27 && data.startsWith('[200~', i)) {
@@ -170,6 +231,16 @@ export class LineEditor {
         i++;
         if (i < data.length) {
           const code = data[i]; i++;
+          if (code === 'A' && this.completionActive) {
+            if (this.completionIdx > 0) this.completionIdx--;
+            this.redrawMenu();
+            continue;
+          }
+          if (code === 'B' && this.completionActive) {
+            if (this.completionIdx < this.completions.length - 1) this.completionIdx++;
+            this.redrawMenu();
+            continue;
+          }
           if (code === 'C' && this.cursor < this.buf.length) { this.cursor++; this.redraw(); }
           else if (code === 'D' && this.cursor > 0) { this.cursor--; this.redraw(); }
           else if (code === 'H') { this.cursor = 0; this.redraw(); }
@@ -181,12 +252,21 @@ export class LineEditor {
         }
         continue;
       }
-      if (cp === 27) continue;
+      if (cp === 27) {
+        if (this.completionActive) { this.resetCompletions(); this.redraw(); }
+        continue;
+      }
 
-      if (cp === 3) { this.finishCancel(); return; }
-      if (cp === 4 && this.buf.length === 0) { this.finishExit(); return; }
+      if (cp === 9 && this.completionActive && this.completionIdx >= 0) {
+        this.applyCompletion(); this.redraw(); continue;
+      }
+      if (cp === 3) { this.resetCompletions(); this.finishCancel(); return; }
+      if (cp === 4 && this.buf.length === 0) { this.resetCompletions(); this.finishExit(); return; }
       if (cp === 4) continue;
-      if (cp === 13 || cp === 10) { this.finishSubmit(this.buf.join('')); return; }
+      if ((cp === 13 || cp === 10) && this.completionActive && this.completionIdx >= 0) {
+        this.applyCompletion(); this.redraw(); continue;
+      }
+      if (cp === 13 || cp === 10) { this.resetCompletions(); this.finishSubmit(this.buf.join('')); return; }
 
       if (cp === 127 || cp === 8) {
         if (this.cursor > 0) { this.buf.splice(this.cursor - 1, 1); this.cursor--; this.redraw(); }
@@ -196,6 +276,7 @@ export class LineEditor {
       if (cp === 5) { this.cursor = this.buf.length; this.redraw(); continue; }
       if (cp === 21) { this.buf.splice(0, this.cursor); this.cursor = 0; this.redraw(); continue; }
       if (cp === 11) { this.buf.splice(this.cursor); this.redraw(); continue; }
+      if (cp === 15 && _lastCollapsed) { this.enterPager(); continue; }
       if (cp === 23) {
         while (this.cursor > 0 && this.buf[this.cursor - 1] === ' ') { this.buf.splice(this.cursor - 1, 1); this.cursor--; }
         while (this.cursor > 0 && this.buf[this.cursor - 1] !== ' ') { this.buf.splice(this.cursor - 1, 1); this.cursor--; }
@@ -206,18 +287,118 @@ export class LineEditor {
   }
 
   private redraw(): void {
+    this.updateCompletions();
     process.stdout.write('\x1b[G\x1b[J');
     const text = this.buf.join('');
     process.stdout.write(this.inputPrompt + text + '\n' + this.buildBottomLine());
-    process.stdout.write('\x1b[A');
+
+    if (this.completionActive && this.completions.length > 0) {
+      const maxCmd = Math.max(...this.completions.map(c => c.cmd.length));
+      for (let i = 0; i < this.completions.length; i++) {
+        const c = this.completions[i];
+        const padded = c.cmd.padEnd(maxCmd + 1);
+        if (i === this.completionIdx) {
+          process.stdout.write('\n' + chalk.bgCyan.black(` ${padded}`) + ' ' + chalk.dim(c.desc));
+        } else {
+          process.stdout.write('\n' + chalk.cyan(` ${padded}`) + ' ' + chalk.dim(c.desc));
+        }
+      }
+    }
+
+    const menuLines = this.completionActive ? this.completions.length : 0;
+    const up = 1 + menuLines;
+    process.stdout.write(`\x1b[${up}A`);
     const col = stringDisplayWidth(this.inputPrompt) + this.widthSlice(0, this.cursor);
     readline.cursorTo(process.stdout, col);
+  }
+
+  private enterPager(): void {
+    if (!_lastCollapsed) return;
+    this.inPager = true;
+    this.pagerLines = _lastCollapsed.split('\n');
+    this.pagerOffset = 0;
+    this.awaitingCursorReport = true;
+    process.stdout.write('\x1b[6n');
+  }
+
+  private renderPager(): void {
+    const rows = process.stdout.rows || 24;
+    const viewable = rows - 1;
+    process.stdout.write('\x1b[H\x1b[J');
+    const total = this.pagerLines.length;
+    const end = Math.min(this.pagerOffset + viewable, total);
+    for (let i = this.pagerOffset; i < end; i++) {
+      process.stdout.write(this.pagerLines[i] + '\n');
+    }
+    process.stdout.write(`\x1b[${rows};0H`);
+    process.stdout.write(chalk.dim(`─── ${this.pagerOffset + 1}-${end}/${total} (↑↓ scroll, Ctrl+O to close) ───`));
+  }
+
+  private exitPager(): void {
+    this.inPager = false;
+    this.pagerLines = [];
+    process.stdout.write('\x1b[?1049l');
+    if (this.pagerInputRow > 0) {
+      process.stdout.write(`\x1b[${this.pagerInputRow};1H`);
+    }
+    this.redraw();
   }
 
   private widthSlice(start: number, end: number): number {
     let w = 0;
     for (let i = start; i < end && i < this.buf.length; i++) w += charDisplayWidth(this.buf[i]);
     return w;
+  }
+
+  private redrawMenu(): void {
+    if (!this.completionActive || this.completions.length === 0) return;
+    process.stdout.write('\x1b[G');
+    process.stdout.write('\x1b[B');
+    process.stdout.write('\x1b[J');
+    const maxCmd = Math.max(...this.completions.map(c => c.cmd.length));
+    for (let i = 0; i < this.completions.length; i++) {
+      const c = this.completions[i];
+      const padded = c.cmd.padEnd(maxCmd + 1);
+      if (i === this.completionIdx) {
+        process.stdout.write('\n' + chalk.bgCyan.black(` ${padded}`) + ' ' + chalk.dim(c.desc));
+      } else {
+        process.stdout.write('\n' + chalk.cyan(` ${padded}`) + ' ' + chalk.dim(c.desc));
+      }
+    }
+    const up = this.completions.length + 1;
+    process.stdout.write(`\x1b[${up}A`);
+    const col = stringDisplayWidth(this.inputPrompt) + this.widthSlice(0, this.cursor);
+    readline.cursorTo(process.stdout, col);
+  }
+
+  private updateCompletions(): void {
+    const text = this.buf.join('');
+    if (text.startsWith('/') && !text.includes(' ') && text.length > 0) {
+      const prefix = text.toLowerCase();
+      this.completions = SLASH_COMMANDS.filter(c => c.cmd.startsWith(prefix));
+      this.completionActive = this.completions.length > 0;
+      this.completionIdx = this.completionActive ? 0 : -1;
+    } else {
+      this.completions = [];
+      this.completionActive = false;
+      this.completionIdx = -1;
+    }
+  }
+
+  private applyCompletion(): void {
+    const selected = this.completions[this.completionIdx];
+    if (!selected) return;
+    this.buf = [...selected.cmd, ' '];
+    this.cursor = this.buf.length;
+    this.completions = [];
+    this.completionActive = false;
+    this.completionIdx = -1;
+  }
+
+  private resetCompletions(): void {
+    this.completions = [];
+    this.completionActive = false;
+    this.completionIdx = -1;
   }
 }
 
@@ -372,26 +553,8 @@ export function printInbox(role: string, tasks: Array<Record<string, any>>) {
 }
 
 export function printHelp() {
-  const cmds: [string, string][] = [
-    ['/status', 'Show agent status'],
-    ['/tasks', 'Show task queue'],
-    ['/inbox <role>', 'View role inbox (pm/dev/ui/tester/admin)'],
-    ['/dispatch', 'Manually dispatch a task'],
-    ['/skills', 'List available tools'],
-    ['/skill list', 'List installed skills'],
-    ['/skill install <url>', 'Install skill from GitHub'],
-    ['/skill remove <name>', 'Remove a skill'],
-    ['/new', 'Start fresh conversation (clear context)'],
-    ['/task', 'List all tasks (active + recent)'],
-    ['/task <id>', 'View task details'],
-    ['/task <id> close', 'Close and archive a task'],
-    ['/compact', 'Toggle compact output'],
-    ['/uninstall', 'Remove OPC from system'],
-    ['/help', 'This help'],
-    ['/exit', 'Quit'],
-  ];
   const table = new Table({ chars: { mid: '', 'left-mid': '', 'mid-mid': '', 'right-mid': '' }, style: { head: [], border: [] } });
-  for (const [cmd, desc] of cmds) {
+  for (const { cmd, desc } of SLASH_COMMANDS) {
     table.push([chalk.cyan(cmd), desc]);
   }
   console.log(table.toString());
@@ -459,16 +622,25 @@ export function printTaskNotification(role: string, taskTitle: string, summary: 
   console.log(boxen(text, { padding: 1, borderColor: 'green', title: 'Task Completed', titleAlignment: 'left' }));
 }
 
+let _lastCollapsed: string | null = null;
+
+export function getLastCollapsed(): string | null { return _lastCollapsed; }
+
+export function formatText(text: string, indent = '  '): string {
+  return text.split('\n').map(l => `${indent}${l}`).join('\n');
+}
+
 export function collapseText(text: string, indent = '  '): string {
   const lines = text.split('\n');
   if (lines.length <= COLLAPSE_THRESHOLD) {
     return lines.map(l => `${indent}${l}`).join('\n');
   }
+  _lastCollapsed = text;
   const shown = lines.slice(0, COLLAPSE_THRESHOLD);
   const hidden = lines.length - COLLAPSE_THRESHOLD;
   return [
     ...shown.map(l => `${indent}${l}`),
-    `${indent}${chalk.dim(`... +${hidden} lines`)}`,
+    `${indent}${chalk.dim(`... +${hidden} lines (Ctrl+O)`)}`,
   ].join('\n');
 }
 
@@ -523,6 +695,25 @@ export async function promptUserSelect(options: Array<{ label: string; value: st
     _promptActive = false;
     return '(skipped)';
   }
+}
+
+export function printSuperAgentStatus(on: boolean) {
+  if (on) {
+    console.log(boxen(
+      chalk.bold.green('SuperAgent: ON') +
+      '\n\nBrain will autonomously iterate the project.' +
+      '\nask_user → ask_boss (LLM auto-decides)' +
+      '\nPress ESC to interrupt at any time.',
+      { padding: 1, borderColor: 'green', title: 'SuperAgent', titleAlignment: 'left' }
+    ));
+  } else {
+    console.log(`  ${chalk.dim('SuperAgent: OFF — back to normal mode')}`);
+  }
+}
+
+export function printBossDecision(question: string, answer: string) {
+  console.log(`  ${chalk.magenta('🤖 Boss:')} ${chalk.dim(question)}`);
+  console.log(`  ${chalk.magenta('→')} ${answer}`);
 }
 
 export async function promptBashApproval(command: string, description = ''): Promise<'yes' | 'always' | 'no'> {
