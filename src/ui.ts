@@ -177,7 +177,7 @@ export class LineEditor {
       i += ch.length;
 
       if (this.inPager) {
-        if (cp === 16 || cp === 3) { this.exitPager(); continue; }
+        if (cp === 15 || cp === 3) { this.exitPager(); continue; }
         if (cp === 27 && i < data.length && data[i] === '[') {
           i++;
           if (i < data.length) {
@@ -261,7 +261,6 @@ export class LineEditor {
       if (cp === 21) { this.buf.splice(0, this.cursor); this.cursor = 0; this.redraw(); continue; }
       if (cp === 11) { this.buf.splice(this.cursor); this.redraw(); continue; }
       if (cp === 15 && _lastCollapsed) { this.enterPager(); continue; }
-      if (cp === 16 && this.inPager) { this.exitPager(); continue; }
       if (cp === 23) {
         while (this.cursor > 0 && this.buf[this.cursor - 1] === ' ') { this.buf.splice(this.cursor - 1, 1); this.cursor--; }
         while (this.cursor > 0 && this.buf[this.cursor - 1] !== ' ') { this.buf.splice(this.cursor - 1, 1); this.cursor--; }
@@ -308,21 +307,23 @@ export class LineEditor {
 
   private renderPager(): void {
     const rows = process.stdout.rows || 24;
-    const viewable = rows - 2;
+    const viewable = rows - 1;
     process.stdout.write('\x1b[H\x1b[J');
     const total = this.pagerLines.length;
     const end = Math.min(this.pagerOffset + viewable, total);
-    process.stdout.write(chalk.dim(`─── expanded ${this.pagerOffset + 1}-${end}/${total} (↑↓ scroll, Ctrl+P to close) ───`) + '\n');
     for (let i = this.pagerOffset; i < end; i++) {
       process.stdout.write(this.pagerLines[i] + '\n');
     }
+    process.stdout.write(`\x1b[${rows};0H`);
+    process.stdout.write(chalk.dim(`─── ${this.pagerOffset + 1}-${end}/${total} (↑↓ scroll, Ctrl+O to close) ───`));
   }
 
   private exitPager(): void {
     this.inPager = false;
     this.pagerLines = [];
     process.stdout.write('\x1b[?1049l');
-    this.redraw();
+    process.stdout.write('\x1b[A\x1b[G\x1b[J');
+    this.drawFull();
   }
 
   private widthSlice(start: number, end: number): number {
