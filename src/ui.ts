@@ -322,6 +322,7 @@ export class LineEditor {
     this.inPager = false;
     this.pagerLines = [];
     process.stdout.write('\x1b[?1049l');
+    this.redraw();
   }
 
   private widthSlice(start: number, end: number): number {
